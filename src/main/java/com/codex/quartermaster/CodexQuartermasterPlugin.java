@@ -1,0 +1,618 @@
+package com.codex.quartermaster;
+
+import com.codex.quartermaster.core.Kit;
+import com.codex.quartermaster.core.Plan;
+import com.codex.quartermaster.core.Prices;
+import com.codex.quartermaster.core.Quarters;
+import com.codex.quartermaster.core.Trip;
+import com.codex.quartermaster.core.Usage;
+import com.codex.quartermaster.overlay.SupplyPlaque;
+import com.codex.quartermaster.ui.Actions;
+import com.codex.quartermaster.ui.Format;
+import com.codex.quartermaster.ui.ItemIcons;
+import com.codex.quartermaster.ui.QuartermasterPanel;
+import com.codex.quartermaster.ui.Sigil;
+import com.codex.quartermaster.ui.Theme;
+import com.codex.quartermaster.ui.View;
+import com.google.gson.Gson;
+import com.google.gson.JsonParseException;
+import com.google.inject.Provides;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import javax.inject.Inject;
+import javax.swing.JOptionPane;
+import javax.swing.SwingUtilities;
+import net.runelite.api.ChatMessageType;
+import net.runelite.api.Client;
+import net.runelite.api.EnumComposition;
+import net.runelite.api.EnumID;
+import net.runelite.api.GameState;
+import net.runelite.api.Item;
+import net.runelite.api.ItemComposition;
+import net.runelite.api.ItemContainer;
+import net.runelite.api.Player;
+import net.runelite.api.events.ActorDeath;
+import net.runelite.api.events.GameStateChanged;
+import net.runelite.api.events.GameTick;
+import net.runelite.api.events.ItemContainerChanged;
+import net.runelite.api.events.WidgetClosed;
+import net.runelite.api.events.WidgetLoaded;
+import net.runelite.api.gameval.InterfaceID;
+import net.runelite.api.gameval.InventoryID;
+import net.runelite.api.gameval.ItemID;
+import net.runelite.api.gameval.VarbitID;
+import net.runelite.client.callback.ClientThread;
+import net.runelite.client.chat.ChatColorType;
+import net.runelite.client.chat.ChatMessageBuilder;
+import net.runelite.client.chat.ChatMessageManager;
+import net.runelite.client.chat.QueuedMessage;
+import net.runelite.client.config.ConfigManager;
+import net.runelite.client.eventbus.Subscribe;
+import net.runelite.client.events.ConfigChanged;
+import net.runelite.client.events.RuneScapeProfileChanged;
+import net.runelite.client.game.ItemManager;
+import net.runelite.client.game.ItemStats;
+import net.runelite.client.plugins.Plugin;
+import net.runelite.client.plugins.PluginDescriptor;
+import net.runelite.client.ui.ClientToolbar;
+import net.runelite.client.ui.NavigationButton;
+import net.runelite.client.ui.overlay.OverlayManager;
+import net.runelite.client.util.AsyncBufferedImage;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+@PluginDescriptor(
+	name = "Codex Quartermaster",
+	description = "Pick the content you are doing and see how many trips your bank supports, what runs out first and what restocking costs at Grand Exchange prices",
+	tags = {"supplies", "bank", "trips", "restock", "potions", "food", "boss", "grand exchange", "codex"}
+)
+public class CodexQuartermasterPlugin extends Plugin
+{
+	private static final Logger log = LoggerFactory.getLogger(CodexQuartermasterPlugin.class);
+	private static final String QUARTERS_KEY = "quarters";
+	/** Ticks between saves while something has changed. */
+	private static final int SAVE_TICKS = 50;
+	/** Ticks between recounts at today's prices, about a minute. */
+	private static final int REPRICE_TICKS = 100;
+	private static final int[] POUCH_RUNES = {
+		VarbitID.RUNE_POUCH_TYPE_1, VarbitID.RUNE_POUCH_TYPE_2, VarbitID.RUNE_POUCH_TYPE_3,
+		VarbitID.RUNE_POUCH_TYPE_4, VarbitID.RUNE_POUCH_TYPE_5, VarbitID.RUNE_POUCH_TYPE_6
+	};
+	private static final int[] POUCH_AMOUNTS = {
+		VarbitID.RUNE_POUCH_QUANTITY_1, VarbitID.RUNE_POUCH_QUANTITY_2, VarbitID.RUNE_POUCH_QUANTITY_3,
+		VarbitID.RUNE_POUCH_QUANTITY_4, VarbitID.RUNE_POUCH_QUANTITY_5, VarbitID.RUNE_POUCH_QUANTITY_6
+	};
+	private static final int[] POUCHES = {
+		ItemID.BH_RUNE_POUCH, ItemID.BH_RUNE_POUCH_TROUVER, ItemID.DIVINE_RUNE_POUCH, ItemID.DIVINE_RUNE_POUCH_TROUVER
+	};
+
+	@Inject
+	private Client client;
+
+	@Inject
+	private ClientThread clientThread;
+
+	@Inject
+	private ClientToolbar clientToolbar;
+
+	@Inject
+	private OverlayManager overlayManager;
+
+	@Inject
+	private ConfigManager configManager;
+
+	@Inject
+	private ItemManager itemManager;
+
+	@Inject
+	private ChatMessageManager chatMessageManager;
+
+	@Inject
+	private Gson gson;
+
+	@Inject
+	private CodexQuartermasterConfig config;
+
+	private final SupplyPlaque plaque = new SupplyPlaque();
+	private final Map<Integer, String> names = new HashMap<>();
+	private final Prices prices = id -> itemManager.getItemPrice(id);
+
+	private QuartermasterPanel panel;
+	private NavigationButton navButton;
+
+	private String profile;
+	private Quarters quarters;
+	/** What was carried when last seen, so the panel still counts it while logged out. */
+	private Map<Integer, Long> carried = Collections.emptyMap();
+	private boolean bankOpen;
+	private boolean dirty;
+	private boolean unsaved;
+	private int ticks;
+
+	@Provides
+	CodexQuartermasterConfig provideConfig(ConfigManager configManager)
+	{
+		return configManager.getConfig(CodexQuartermasterConfig.class);
+	}
+
+	@Override
+	protected void startUp()
+	{
+		ItemIcons icons = (itemId, onLoaded) ->
+		{
+			AsyncBufferedImage image = itemManager.getImage(itemId);
+			image.onLoaded(onLoaded);
+			return image;
+		};
+		panel = new QuartermasterPanel(icons, new PanelActions());
+		navButton = NavigationButton.builder()
+			.tooltip("Codex Quartermaster")
+			.icon(Sigil.icon(16))
+			.priority(8)
+			.panel(panel)
+			.build();
+		clientToolbar.addNavigation(navButton);
+		overlayManager.add(plaque);
+		clientThread.invokeLater(() ->
+		{
+			loadProfile();
+			if (client.getGameState() == GameState.LOGGED_IN)
+			{
+				carried = readCarried();
+				ItemContainer bank = client.getItemContainer(InventoryID.BANK);
+				if (bank != null && quarters != null)
+				{
+					quarters.observeBank(contents(bank), System.currentTimeMillis());
+					unsaved = true;
+				}
+			}
+			publish();
+		});
+	}
+
+	@Override
+	protected void shutDown()
+	{
+		overlayManager.remove(plaque);
+		clientToolbar.removeNavigation(navButton);
+		clientThread.invokeLater(() ->
+		{
+			save();
+			quarters = null;
+			profile = null;
+			names.clear();
+			bankOpen = false;
+		});
+		panel = null;
+	}
+
+	@Subscribe
+	public void onGameStateChanged(GameStateChanged event)
+	{
+		if (event.getGameState() == GameState.LOGIN_SCREEN)
+		{
+			bankOpen = false;
+			save();
+			publish();
+		}
+	}
+
+	@Subscribe
+	public void onRuneScapeProfileChanged(RuneScapeProfileChanged event)
+	{
+		save();
+		loadProfile();
+		bankOpen = false;
+		carried = client.getGameState() == GameState.LOGGED_IN ? readCarried() : Collections.emptyMap();
+		publish();
+	}
+
+	@Subscribe
+	public void onConfigChanged(ConfigChanged event)
+	{
+		if (CodexQuartermasterConfig.GROUP.equals(event.getGroup()))
+		{
+			dirty = true;
+		}
+	}
+
+	@Subscribe
+	public void onItemContainerChanged(ItemContainerChanged event)
+	{
+		if (client.getGameState() != GameState.LOGGED_IN || quarters == null)
+		{
+			return;
+		}
+		int id = event.getContainerId();
+		if (id == InventoryID.BANK)
+		{
+			quarters.observeBank(contents(event.getItemContainer()), System.currentTimeMillis());
+			unsaved = true;
+			dirty = true;
+		}
+		else if (id == InventoryID.INV || id == InventoryID.WORN)
+		{
+			carried = readCarried();
+			dirty = true;
+		}
+	}
+
+	@Subscribe
+	public void onWidgetLoaded(WidgetLoaded event)
+	{
+		if (event.getGroupId() != InterfaceID.BANKMAIN || quarters == null)
+		{
+			return;
+		}
+		bankOpen = true;
+		// The bank has just opened, so what is carried is still what came back from the trip.
+		Trip trip = quarters.endTrip(readCarried(), System.currentTimeMillis(), prices);
+		if (trip != null)
+		{
+			unsaved = true;
+		}
+		dirty = true;
+	}
+
+	@Subscribe
+	public void onWidgetClosed(WidgetClosed event)
+	{
+		if (event.getGroupId() != InterfaceID.BANKMAIN || !event.isUnload() || quarters == null)
+		{
+			return;
+		}
+		bankOpen = false;
+		carried = readCarried();
+		if (config.recognise() && quarters.recognise(carried) != null)
+		{
+			unsaved = true;
+		}
+		quarters.startTrip(carried, System.currentTimeMillis());
+		warn();
+		dirty = true;
+	}
+
+	@Subscribe
+	public void onActorDeath(ActorDeath event)
+	{
+		if (quarters != null && event.getActor() == client.getLocalPlayer())
+		{
+			// What is lost on death is not what the trip used.
+			quarters.voidTrip();
+		}
+	}
+
+	@Subscribe
+	public void onGameTick(GameTick tick)
+	{
+		if (quarters == null || client.getGameState() != GameState.LOGGED_IN)
+		{
+			return;
+		}
+		ticks++;
+		if (unsaved && ticks % SAVE_TICKS == 0)
+		{
+			save();
+		}
+		if (dirty || ticks % REPRICE_TICKS == 0)
+		{
+			publish();
+		}
+	}
+
+	/** When setting out with the chosen kit packed and few trips left, says what runs out and what restocking costs. */
+	private void warn()
+	{
+		Kit kit = quarters.activeKit();
+		if (!quarters.hasBank() || Quarters.packed(kit, carried) < 0.5)
+		{
+			return;
+		}
+		Plan plan = quarters.plan(kit, carried, prices, config.measured());
+		Plan.Line first = plan.limiting();
+		int trips = plan.trips();
+		if (first == null || trips > config.warnTrips())
+		{
+			return;
+		}
+		String supply = supplyName(first).toLowerCase(Locale.ENGLISH);
+		// What is carried counts, so one trip left is the one setting out now.
+		String text;
+		if (trips == 0)
+		{
+			text = "not enough " + supply + " for a full " + kit.getName() + " trip.";
+		}
+		else if (trips == 1)
+		{
+			text = "this is your last " + kit.getName() + " trip before " + supply + " runs out.";
+		}
+		else
+		{
+			text = trips + " " + kit.getName() + " trips left, counting this one; " + supply + " runs out first.";
+		}
+		ChatMessageBuilder line = new ChatMessageBuilder()
+			.append(ChatColorType.HIGHLIGHT).append("Codex Quartermaster: ")
+			.append(ChatColorType.NORMAL).append(text);
+		if (plan.restockCost() > 0)
+		{
+			line.append(" Restocking to " + plan.getTarget() + " trips costs " + Format.coins(plan.restockCost()) + ".");
+		}
+		chatMessageManager.queue(QueuedMessage.builder()
+			.type(ChatMessageType.CONSOLE)
+			.runeLiteFormattedMessage(line.build())
+			.build());
+	}
+
+	private Map<Integer, Long> contents(ItemContainer container)
+	{
+		Map<Integer, Long> items = new HashMap<>();
+		if (container == null)
+		{
+			return items;
+		}
+		for (Item item : container.getItems())
+		{
+			if (item.getId() < 0 || item.getQuantity() <= 0)
+			{
+				continue;
+			}
+			items.merge(itemManager.canonicalize(item.getId()), (long) item.getQuantity(), Long::sum);
+		}
+		return items;
+	}
+
+	/** The inventory, worn gear and the runes in a carried rune pouch. */
+	private Map<Integer, Long> readCarried()
+	{
+		Map<Integer, Long> items = contents(client.getItemContainer(InventoryID.INV));
+		contents(client.getItemContainer(InventoryID.WORN)).forEach((id, q) -> items.merge(id, q, Long::sum));
+		boolean pouch = false;
+		for (int id : POUCHES)
+		{
+			pouch |= items.containsKey(id);
+		}
+		if (pouch)
+		{
+			EnumComposition runes = client.getEnum(EnumID.RUNEPOUCH_RUNE);
+			for (int i = 0; i < POUCH_RUNES.length; i++)
+			{
+				int type = client.getVarbitValue(POUCH_RUNES[i]);
+				int amount = client.getVarbitValue(POUCH_AMOUNTS[i]);
+				int itemId = type > 0 ? runes.getIntValue(type) : -1;
+				if (itemId > 0 && amount > 0)
+				{
+					items.merge(itemId, (long) amount, Long::sum);
+				}
+			}
+		}
+		return items;
+	}
+
+	/**
+	 * Whether a carried item is a supply a saved kit should count. Stackables are, worn gear and
+	 * other equipment are not, and anything else is when it can be bought again.
+	 */
+	private boolean isSupply(int itemId)
+	{
+		ItemComposition item = itemManager.getItemComposition(itemId);
+		if (item.isStackable())
+		{
+			return true;
+		}
+		ItemStats stats = itemManager.getItemStats(itemId);
+		if (stats != null && stats.isEquipable())
+		{
+			return false;
+		}
+		return item.isTradeable();
+	}
+
+	private void loadProfile()
+	{
+		profile = configManager.getRSProfileKey();
+		quarters = null;
+		if (profile == null)
+		{
+			return;
+		}
+		try
+		{
+			String saved = configManager.getRSProfileConfiguration(CodexQuartermasterConfig.GROUP, QUARTERS_KEY);
+			if (saved != null && !saved.isEmpty())
+			{
+				Quarters read = gson.fromJson(saved, Quarters.class);
+				quarters = read == null ? null : read.repair();
+			}
+		}
+		catch (JsonParseException e)
+		{
+			log.warn("Could not read the saved quarters, starting afresh", e);
+		}
+		if (quarters == null)
+		{
+			quarters = new Quarters();
+		}
+		unsaved = false;
+		dirty = true;
+	}
+
+	private void save()
+	{
+		if (profile == null || quarters == null || !unsaved)
+		{
+			return;
+		}
+		unsaved = false;
+		configManager.setConfiguration(CodexQuartermasterConfig.GROUP, profile, QUARTERS_KEY, gson.toJson(quarters));
+	}
+
+	/** Works out every kit's plan and hands the panel and the plaque what they show. */
+	private void publish()
+	{
+		dirty = false;
+		QuartermasterPanel target = panel;
+		long now = System.currentTimeMillis();
+		boolean loggedIn = client.getGameState() == GameState.LOGGED_IN;
+		if (quarters == null)
+		{
+			plaque.show(null, null, null);
+			if (target != null)
+			{
+				SwingUtilities.invokeLater(() -> target.update(View.loggedOut()));
+			}
+			return;
+		}
+		boolean measured = config.measured();
+		Kit active = quarters.activeKit();
+		List<Plan> plans = new ArrayList<>();
+		Plan chosen = null;
+		for (Kit kit : quarters.allKits())
+		{
+			Plan plan = quarters.plan(kit, carried, prices, measured);
+			plans.add(plan);
+			if (kit == active)
+			{
+				chosen = plan;
+			}
+			for (Plan.Line line : plan.getLines())
+			{
+				name(line.getSupply().getIcon());
+				line.getHeld().keySet().forEach(this::name);
+				line.getBuys().forEach(b -> name(b.getItemId()));
+			}
+		}
+		Usage usage = quarters.usage(active.getId());
+		List<Trip> trips = usage == null ? Collections.emptyList() : new ArrayList<>(usage.getRecent());
+		Player player = client.getLocalPlayer();
+		View.State state = !quarters.hasBank() ? View.State.WAITING_FOR_BANK : View.State.READY;
+		View view = new View(state, loggedIn && player != null ? player.getName() : null, chosen, plans, trips,
+			usage == null ? 0 : usage.getTrips(), quarters.getBankSeen(), bankOpen, new HashMap<>(names), config.warnTrips(), now);
+
+		CodexQuartermasterConfig.PlaqueMode mode = config.plaque();
+		boolean showPlaque = loggedIn && quarters.hasBank() && chosen != null
+			&& (mode == CodexQuartermasterConfig.PlaqueMode.ALWAYS || mode == CodexQuartermasterConfig.PlaqueMode.AT_THE_BANK && bankOpen);
+		if (showPlaque)
+		{
+			int n = chosen.trips();
+			Plan.Line first = chosen.limiting();
+			String figure = n == Plan.UNLIMITED ? "Ample" : n + (n == 1 ? " trip" : " trips");
+			String note = active.getName() + (first == null ? "" : "  -  " + supplyName(first) + " first");
+			plaque.show(figure, note, n == Plan.UNLIMITED ? Theme.GOLD : Theme.trips(n, config.warnTrips()));
+		}
+		else
+		{
+			plaque.show(null, null, null);
+		}
+		if (target != null)
+		{
+			SwingUtilities.invokeLater(() -> target.update(view));
+		}
+	}
+
+	private String supplyName(Plan.Line line)
+	{
+		return line.getSupply().getName() != null ? line.getSupply().getName() : name(line.getSupply().getIcon());
+	}
+
+	private String name(int itemId)
+	{
+		return names.computeIfAbsent(itemId, id -> itemManager.getItemComposition(id).getName());
+	}
+
+	/** The panel's buttons; each change is made on the client thread, where the quarters live. */
+	private final class PanelActions implements Actions
+	{
+		@Override
+		public void choose(String kitId)
+		{
+			clientThread.invokeLater(() ->
+			{
+				if (quarters != null)
+				{
+					quarters.select(kitId);
+					unsaved = true;
+					publish();
+				}
+			});
+		}
+
+		@Override
+		public void target(int trips)
+		{
+			clientThread.invokeLater(() ->
+			{
+				if (quarters != null)
+				{
+					quarters.setTarget(trips);
+					unsaved = true;
+					publish();
+				}
+			});
+		}
+
+		@Override
+		public void capture()
+		{
+			Quarters q = quarters;
+			if (q == null || client.getGameState() != GameState.LOGGED_IN)
+			{
+				return;
+			}
+			String suggested = "My kit " + (q.getSavedKits().size() + 1);
+			Object answer = JOptionPane.showInputDialog(panel, "Name this kit, such as the boss it is for:", "Save a kit",
+				JOptionPane.PLAIN_MESSAGE, null, null, suggested);
+			if (answer == null || answer.toString().trim().isEmpty())
+			{
+				return;
+			}
+			String name = answer.toString().trim();
+			clientThread.invokeLater(() ->
+			{
+				if (quarters == null)
+				{
+					return;
+				}
+				carried = readCarried();
+				Kit kit = quarters.capture(name.length() > 32 ? name.substring(0, 32) : name, carried, CodexQuartermasterPlugin.this::isSupply);
+				if (kit == null)
+				{
+					chatMessageManager.queue(QueuedMessage.builder()
+						.type(ChatMessageType.CONSOLE)
+						.runeLiteFormattedMessage(new ChatMessageBuilder()
+							.append(ChatColorType.HIGHLIGHT).append("Codex Quartermaster: ")
+							.append(ChatColorType.NORMAL).append("nothing you are carrying is a supply. Withdraw your food, potions and the like, then save the kit.")
+							.build())
+						.build());
+					return;
+				}
+				unsaved = true;
+				save();
+				publish();
+			});
+		}
+
+		@Override
+		public void forget(String kitId)
+		{
+			int ok = JOptionPane.showConfirmDialog(panel, "Forget this kit and the trips measured with it?", "Forget kit",
+				JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE);
+			if (ok != JOptionPane.OK_OPTION)
+			{
+				return;
+			}
+			clientThread.invokeLater(() ->
+			{
+				if (quarters != null && quarters.forget(kitId))
+				{
+					unsaved = true;
+					save();
+					publish();
+				}
+			});
+		}
+	}
+}
