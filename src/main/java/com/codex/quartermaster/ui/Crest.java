@@ -12,6 +12,7 @@ import java.awt.RadialGradientPaint;
 import java.awt.RenderingHints;
 import java.awt.geom.Ellipse2D;
 import java.awt.geom.Path2D;
+import java.awt.geom.RoundRectangle2D;
 import java.awt.image.BufferedImage;
 import javax.swing.JComponent;
 
@@ -31,6 +32,9 @@ public class Crest extends JComponent
 	private boolean known;
 	private boolean unlimited;
 	private Color figureTint = Theme.GOLD;
+	/** How far toward the restock target the bank is, 0 to 1, or negative for no bar. */
+	private double stocked = -1;
+	private int target;
 
 	public Crest()
 	{
@@ -46,6 +50,15 @@ public class Crest extends JComponent
 	 */
 	public void update(String heading, Integer trips, boolean unlimited, String status, String shortStatus, Color statusColor, Color tint)
 	{
+		update(heading, trips, unlimited, status, shortStatus, statusColor, tint, 0);
+	}
+
+	/** @param target the restock target, drawn as a slim gauge under the figure, or 0 for none */
+	public void update(String heading, Integer trips, boolean unlimited, String status, String shortStatus, Color statusColor,
+		Color tint, int target)
+	{
+		this.target = target;
+		this.stocked = trips == null || unlimited || target <= 0 ? -1 : Math.min(1, trips / (double) target);
 		this.heading = heading;
 		this.status = status;
 		this.shortStatus = shortStatus;
@@ -130,7 +143,27 @@ public class Crest extends JComponent
 			g.setColor(Theme.GOLD_DIM);
 			g.drawString(Math.round(count.get()) == 1 ? "trip" : "trips", tx + figureW + 3, top + 18);
 		}
-		int cy = top + 50;
+		int cy = top + 54;
+		if (stocked >= 0 && known)
+		{
+			// A slim gauge of the trips held against the restock target, with its tick at the end.
+			int gy = top + 32;
+			int gw = room;
+			g.setColor(Theme.INK_DEEP);
+			g.fill(new RoundRectangle2D.Float(tx, gy, gw, 4, 4, 4));
+			float fill = (float) (gw * stocked);
+			if (fill > 0)
+			{
+				g.setPaint(new GradientPaint(tx, 0, Theme.mix(figureTint, Theme.INK, 0.45), tx + gw, 0, figureTint));
+				g.fill(new RoundRectangle2D.Float(tx, gy, Math.max(4, fill), 4, 4, 4));
+			}
+			g.setColor(Theme.alpha(Theme.GOLD, 50));
+			g.draw(new RoundRectangle2D.Float(tx - 0.5f, gy - 0.5f, gw + 1, 5, 5, 5));
+			g.setFont(Theme.small());
+			String of = "of " + target;
+			g.setColor(Theme.TEXT_FAINT);
+			g.drawString(of, tx + gw - small.stringWidth(of), top + 18);
+		}
 		g.setFont(Theme.small());
 		if (status != null)
 		{

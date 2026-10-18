@@ -609,7 +609,8 @@ public class CodexQuartermasterPlugin extends Plugin
 			int n = chosen.trips();
 			Plan.Line first = chosen.limiting();
 			String figure = n == Plan.UNLIMITED ? "Ample" : n + (n == 1 ? " trip" : " trips");
-			String note = active.getName() + (first == null ? "" : "  -  " + supplyName(first) + " first");
+			String note = active.getName() + (first == null ? "" : n == 0 ? "  -  out of " + supplyName(first).toLowerCase(Locale.ENGLISH)
+				: "  -  " + supplyName(first) + " first");
 			plaque.show(figure, note, n == Plan.UNLIMITED ? Theme.GOLD : Theme.trips(n, config.warnTrips()));
 		}
 		else

@@ -182,7 +182,7 @@ public class QuartermasterPanel extends PluginPanel
 		Plan plan = view.active;
 		if (plan == null)
 		{
-			crest.update("SUPPLIES", null, false, "Log in to count your supplies", null, Theme.TEXT_MUTED, Theme.GOLD);
+			crest.update("QUARTERMASTER", null, false, "Log in to begin", null, Theme.TEXT_MUTED, Theme.GOLD);
 			return;
 		}
 		String heading = plan.getKit().getName().toUpperCase(Locale.ENGLISH);
@@ -202,7 +202,8 @@ public class QuartermasterPanel extends PluginPanel
 		String supply = view.name(first);
 		String status = trips == 0 ? "Out of " + supply.toLowerCase(Locale.ENGLISH) : supply + " runs out first";
 		String shortStatus = trips == 0 ? "Out of " + supply.toLowerCase(Locale.ENGLISH) : supply + " first";
-		crest.update(heading, trips, false, status, shortStatus, trips <= view.warn ? color : Theme.mix(Theme.TEXT_MUTED, Theme.GOLD, 0.35), trips <= view.warn ? color : Theme.GOLD);
+		crest.update(heading, trips, false, status, shortStatus, trips <= view.warn ? color : Theme.mix(Theme.TEXT_MUTED, Theme.GOLD, 0.35),
+			trips <= view.warn ? color : Theme.GOLD, plan.getTarget());
 	}
 
 	private boolean waiting(StackPanel stack)
@@ -264,7 +265,7 @@ public class QuartermasterPanel extends PluginPanel
 		list.add(rows, BorderLayout.CENTER);
 		stack.add(list);
 		String foot = measured
-			? "* measured from your trips with this kit"
+			? "* measured from your own trips"
 			: plan.getKit().isPreset() ? "Typical amounts until your own trips are measured" : "As packed until your own trips are measured";
 		stack.add(Ui.wrapped(foot, Theme.small(), Theme.TEXT_FAINT, WIDTH));
 

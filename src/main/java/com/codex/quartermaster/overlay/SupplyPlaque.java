@@ -19,6 +19,8 @@ import net.runelite.client.ui.overlay.OverlayPosition;
 public class SupplyPlaque extends Overlay
 {
 	private static final int PAD = 7;
+	/** Past this the note is cut short, so a long kit name cannot stretch the plaque across the game. */
+	private static final int MAX_NOTE = 240;
 
 	private volatile Shown shown;
 
@@ -61,7 +63,8 @@ public class SupplyPlaque extends Overlay
 		g.setFont(Theme.small());
 		FontMetrics small = g.getFontMetrics();
 		int icon = 14;
-		int width = PAD + icon + 6 + bold.stringWidth(s.figure) + 10 + small.stringWidth(s.note) + PAD;
+		String note = Ui.clip(s.note, small, MAX_NOTE);
+		int width = PAD + icon + 6 + bold.stringWidth(s.figure) + 10 + small.stringWidth(note) + PAD;
 		int height = Math.max(icon, bold.getHeight()) + PAD;
 
 		RoundRectangle2D shape = new RoundRectangle2D.Float(0.5f, 0.5f, width - 1, height - 1, 10, 10);
@@ -78,7 +81,7 @@ public class SupplyPlaque extends Overlay
 		Ui.shadowed(g, s.figure, x, base, s.color);
 		x += bold.stringWidth(s.figure) + 10;
 		g.setFont(Theme.small());
-		Ui.shadowed(g, s.note, x, base, Theme.TEXT_MUTED);
+		Ui.shadowed(g, note, x, base, Theme.TEXT_MUTED);
 		return new Dimension(width, height);
 	}
 }
