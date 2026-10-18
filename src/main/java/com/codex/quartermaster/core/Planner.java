@@ -1,6 +1,7 @@
 package com.codex.quartermaster.core;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -20,6 +21,15 @@ public final class Planner
 	 */
 	public static Plan plan(Kit kit, Usage usage, Map<Integer, Long> held, Prices prices, int target, boolean measured)
 	{
+		return plan(kit, usage, held, Collections.emptyMap(), prices, target, measured);
+	}
+
+	/**
+	 * @param stored potion doses kept in the bank's potion storage, by the potion's 1-dose item
+	 */
+	public static Plan plan(Kit kit, Usage usage, Map<Integer, Long> held, Map<Integer, Long> stored, Prices prices,
+		int target, boolean measured)
+	{
 		boolean useMeasured = measured && usage != null && usage.isTrusted();
 		List<Plan.Line> lines = new ArrayList<>();
 		for (Need need : kit.getNeeds())
@@ -36,28 +46,69 @@ public final class Planner
 				perTrip = usage.perTrip(supply.getKey());
 				fromTrips = true;
 			}
-			long have = supply.count(held);
+			long inStorage = supply.count(stored);
+			long have = supply.count(held) + inStorage;
 			// Measured amounts are averages; a fraction of a unit a trip is noise, not a supply.
 			boolean kept = perTrip < 0.5;
 			int trips = kept ? Plan.UNLIMITED : (int) Math.min(Integer.MAX_VALUE - 1, (long) Math.floor(have / perTrip));
 
 			long shortfall = kept ? 0 : Math.max(0, (long) Math.ceil(target * perTrip - have));
-			int cheapest = cheapest(supply, prices);
-			double unitPrice = cheapest < 0 ? 0 : prices.price(cheapest) / (double) supply.getUnits().get(cheapest);
+			int buy = buyItem(supply, held, stored, prices);
+			double unitPrice = buy < 0 ? 0 : prices.price(buy) / (double) supply.getUnits().get(buy);
 			List<Plan.Buy> buys = new ArrayList<>();
-			if (shortfall > 0 && cheapest >= 0)
+			if (shortfall > 0 && buy >= 0)
 			{
-				int per = supply.getUnits().get(cheapest);
+				int per = supply.getUnits().get(buy);
 				long quantity = (shortfall + per - 1) / per;
-				buys.add(new Plan.Buy(cheapest, quantity, prices.price(cheapest)));
+				buys.add(new Plan.Buy(buy, quantity, prices.price(buy)));
 			}
-			long tripCost = kept || cheapest < 0 ? 0 : Math.round(perTrip * unitPrice);
-			lines.add(new Plan.Line(supply, have, kept ? 0 : perTrip, fromTrips, trips, shortfall, buys, tripCost, heldOf(supply, held)));
+			long tripCost = kept || buy < 0 ? 0 : Math.round(perTrip * unitPrice);
+			lines.add(new Plan.Line(supply, have, kept ? 0 : perTrip, fromTrips, trips, shortfall, buys, tripCost,
+				heldOf(supply, held), inStorage, buy));
 		}
 		return new Plan(kit, lines, target);
 	}
 
-	/** @return the item that buys this supply most cheaply per unit, or -1 when none has a price */
+	/**
+	 * The item a supply is restocked with: what the player already uses most of, in its full form,
+	 * so a player on anglerfish is not told to buy cake slices because they are cheaper per heal.
+	 * With none held it is the supply's usual item, and failing that the cheapest full form.
+	 *
+	 * @return the item, or -1 when nothing that counts has a price
+	 */
+	static int buyItem(Supply supply, Map<Integer, Long> held, Map<Integer, Long> stored, Prices prices)
+	{
+		Map<Integer, Long> byForm = new LinkedHashMap<>();
+		for (Map.Entry<Integer, Integer> e : supply.getUnits().entrySet())
+		{
+			long q = held.getOrDefault(e.getKey(), 0L) + stored.getOrDefault(e.getKey(), 0L);
+			if (q > 0)
+			{
+				byForm.merge(supply.fullForm(e.getKey()), q * e.getValue(), Long::sum);
+			}
+		}
+		int best = -1;
+		long most = 0;
+		for (Map.Entry<Integer, Long> e : byForm.entrySet())
+		{
+			if (e.getValue() > most && prices.price(e.getKey()) > 0)
+			{
+				best = e.getKey();
+				most = e.getValue();
+			}
+		}
+		if (best >= 0)
+		{
+			return best;
+		}
+		if (prices.price(supply.getIcon()) > 0 && supply.getUnits().containsKey(supply.getIcon()))
+		{
+			return supply.getIcon();
+		}
+		return cheapest(supply, prices);
+	}
+
+	/** @return the full form that buys this supply most cheaply per unit, or -1 when none has a price */
 	static int cheapest(Supply supply, Prices prices)
 	{
 		int best = -1;
@@ -65,7 +116,7 @@ public final class Planner
 		for (Map.Entry<Integer, Integer> e : supply.getUnits().entrySet())
 		{
 			long price = prices.price(e.getKey());
-			if (price <= 0)
+			if (price <= 0 || !supply.isFullForm(e.getKey()))
 			{
 				continue;
 			}
@@ -79,10 +130,10 @@ public final class Planner
 		return best;
 	}
 
-	/** What units of a supply cost at the cheapest item that buys them, or 0 without a price. */
-	static long cost(Supply supply, long units, Prices prices)
+	/** What units of a supply cost in the item that would restock them, or 0 without a price. */
+	static long cost(Supply supply, long units, Map<Integer, Long> carried, Prices prices)
 	{
-		int best = cheapest(supply, prices);
+		int best = buyItem(supply, carried, Collections.emptyMap(), prices);
 		return best < 0 ? 0 : Math.round(units * prices.price(best) / (double) supply.getUnits().get(best));
 	}
 
