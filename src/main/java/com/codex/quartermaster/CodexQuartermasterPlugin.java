@@ -21,9 +21,11 @@ import com.google.inject.Provides;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import javax.inject.Inject;
 import javax.swing.JOptionPane;
 import javax.swing.SwingUtilities;
@@ -50,6 +52,7 @@ import net.runelite.api.gameval.InventoryID;
 import net.runelite.api.gameval.ItemID;
 import net.runelite.api.gameval.VarPlayerID;
 import net.runelite.api.gameval.VarbitID;
+import net.runelite.api.widgets.Widget;
 import net.runelite.client.callback.ClientThread;
 import net.runelite.client.chat.ChatColorType;
 import net.runelite.client.chat.ChatMessageBuilder;
@@ -140,6 +143,15 @@ public class CodexQuartermasterPlugin extends Plugin
 	private boolean bankOpen;
 	/** The potion storage needs reading on the next tick the bank is open. */
 	private boolean readStorage;
+	/**
+	 * The varps the potion storage keeps its counts in, one per potion, taken from the storage
+	 * widget's own triggers as RuneLite's bank tags do. Null until the bank has been seen open.
+	 */
+	private Set<Integer> storageVars;
+	/** Ticks after the bank closes in which a storage change, such as a last withdrawal, is still read. */
+	private int storageGrace;
+	/** Quiver ammo or rune pouch runes changed, which no item container reports. */
+	private boolean recarry;
 	private final Warning warning = new Warning();
 	private boolean dirty;
 	private boolean unsaved;
@@ -208,6 +220,8 @@ public class CodexQuartermasterPlugin extends Plugin
 		if (event.getGameState() == GameState.LOGIN_SCREEN)
 		{
 			bankOpen = false;
+			storageGrace = 0;
+			readStorage = false;
 			if (quarters != null)
 			{
 				// What changes while logged out, on another client, is not what the trip used.
@@ -224,6 +238,8 @@ public class CodexQuartermasterPlugin extends Plugin
 		save();
 		loadProfile();
 		bankOpen = false;
+		storageGrace = 0;
+		readStorage = false;
 		carried = client.getGameState() == GameState.LOGGED_IN ? readCarried() : Collections.emptyMap();
 		publish();
 	}
@@ -261,12 +277,25 @@ public class CodexQuartermasterPlugin extends Plugin
 	@Subscribe
 	public void onVarbitChanged(VarbitChanged event)
 	{
-		if (bankOpen)
+		// The per-potion varps change when doses go in or out; the base vars when doses are rearranged.
+		int id = event.getVarpId();
+		Set<Integer> vars = storageVars;
+		boolean storage = vars != null && vars.contains(id);
+		for (int varp : POTION_STORE_VARS)
 		{
-			for (int varp : POTION_STORE_VARS)
-			{
-				readStorage |= event.getVarpId() == varp;
-			}
+			storage |= id == varp;
+		}
+		if (storage && (bankOpen || storageGrace > 0))
+		{
+			readStorage = true;
+		}
+		if (id == VarPlayerID.DIZANAS_QUIVER_TEMP_AMMO || id == VarPlayerID.DIZANAS_QUIVER_TEMP_AMMO_AMOUNT)
+		{
+			recarry = true;
+		}
+		for (int i = 0; i < POUCH_AMOUNTS.length; i++)
+		{
+			recarry |= event.getVarbitId() == POUCH_AMOUNTS[i] || event.getVarbitId() == POUCH_RUNES[i];
 		}
 	}
 
@@ -296,6 +325,8 @@ public class CodexQuartermasterPlugin extends Plugin
 			return;
 		}
 		bankOpen = false;
+		// A withdrawal made just before closing reaches the storage varps a tick later.
+		storageGrace = 2;
 		carried = readCarried();
 		if (config.recognise() && quarters.recognise(carried) != null)
 		{
@@ -325,10 +356,20 @@ public class CodexQuartermasterPlugin extends Plugin
 		}
 		ticks++;
 		checkIron();
-		if (readStorage && bankOpen)
+		if (recarry)
+		{
+			recarry = false;
+			carried = readCarried();
+			dirty = true;
+		}
+		if (readStorage && (bankOpen || storageGrace > 0))
 		{
 			readStorage = false;
 			readPotionStorage();
+		}
+		if (storageGrace > 0 && !bankOpen)
+		{
+			storageGrace--;
 		}
 		if (unsaved && ticks % SAVE_TICKS == 0)
 		{
@@ -407,6 +448,20 @@ public class CodexQuartermasterPlugin extends Plugin
 		if (potions == null)
 		{
 			return;
+		}
+		if (storageVars == null)
+		{
+			Widget w = client.getWidget(InterfaceID.Bankmain.POTIONSTORE_ITEMS);
+			int[] trigger = w == null ? null : w.getVarTransmitTrigger();
+			if (trigger != null)
+			{
+				Set<Integer> vars = new HashSet<>();
+				for (int v : trigger)
+				{
+					vars.add(v);
+				}
+				storageVars = vars;
+			}
 		}
 		Map<Integer, Long> doses = new HashMap<>();
 		for (int potionEnum : potions.getIntVals())
