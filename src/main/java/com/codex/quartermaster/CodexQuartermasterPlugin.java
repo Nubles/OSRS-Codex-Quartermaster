@@ -26,6 +26,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
 import javax.inject.Inject;
 import javax.swing.JOptionPane;
 import javax.swing.SwingUtilities;
@@ -60,6 +61,7 @@ import net.runelite.client.chat.ChatMessageManager;
 import net.runelite.client.chat.QueuedMessage;
 import net.runelite.client.config.ConfigManager;
 import net.runelite.client.eventbus.Subscribe;
+import net.runelite.client.events.ClientShutdown;
 import net.runelite.client.events.ConfigChanged;
 import net.runelite.client.events.RuneScapeProfileChanged;
 import net.runelite.client.game.ItemManager;
@@ -212,6 +214,29 @@ public class CodexQuartermasterPlugin extends Plugin
 			bankOpen = false;
 		});
 		panel = null;
+	}
+
+	@Subscribe
+	public void onClientShutdown(ClientShutdown event)
+	{
+		// ConfigManager writes its changes to disk in this same event, before a save queued on the
+		// client thread runs, so a save made here has to be sent on by hand or it is never written.
+		CompletableFuture<Void> done = new CompletableFuture<>();
+		clientThread.invokeLater(() ->
+		{
+			try
+			{
+				if (save())
+				{
+					configManager.sendConfig();
+				}
+			}
+			finally
+			{
+				done.complete(null);
+			}
+		});
+		event.waitFor(done);
 	}
 
 	@Subscribe
@@ -603,14 +628,16 @@ public class CodexQuartermasterPlugin extends Plugin
 		dirty = true;
 	}
 
-	private void save()
+	/** Writes to the profile if anything changed, and says whether it did. */
+	private boolean save()
 	{
 		if (profile == null || quarters == null || !unsaved)
 		{
-			return;
+			return false;
 		}
 		unsaved = false;
 		configManager.setConfiguration(CodexQuartermasterConfig.GROUP, profile, QUARTERS_KEY, gson.toJson(quarters));
+		return true;
 	}
 
 	/** Works out every kit's plan and hands the panel and the plaque what they show. */
