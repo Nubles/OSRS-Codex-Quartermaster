@@ -343,6 +343,8 @@ public class QuartermasterPanel extends PluginPanel
 				missing.add(line);
 			}
 		}
+		// What runs out soonest first.
+		missing.sort((a, b) -> Integer.compare(a.getTrips(), b.getTrips()));
 		List<Plan.Buy> shopping = view.ironman ? java.util.Collections.emptyList() : plan.shopping();
 		List<Plan.Line> unbuyable = view.ironman ? missing : plan.unbuyable();
 
