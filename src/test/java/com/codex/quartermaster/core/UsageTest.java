@@ -68,9 +68,18 @@ public class UsageTest
 		used.put("PRAYER", 12L);
 		u.record(kit("FOOD", 100, "PRAYER", 8), new Trip(2, 70_000, used, 0));
 		assertEquals(12, u.perTrip("PRAYER"), 1e-9);
-		// A supply a trip does not mention was not used on it, and moves the average down.
+		// A supply a trip does not mention was not used on it; this is prayer's second trip, so half.
 		u.record(kit("FOOD", 100, "PRAYER", 8), new Trip(3, 70_000, Collections.emptyMap(), 0));
-		assertTrue(u.perTrip("PRAYER") < 12);
+		assertEquals(6, u.perTrip("PRAYER"), 1e-9);
+	}
+
+	@Test
+	public void oldSavesWithoutCountsAverageOverAllTrips()
+	{
+		Usage u = new com.google.gson.Gson().fromJson("{\"trips\":3,\"perTrip\":{\"FOOD\":120.0}}", Usage.class).repair();
+		u.record(kit("FOOD", 100), trip(0, 200, 0));
+		// The fourth trip of FOOD moves the average by a quarter.
+		assertEquals(140, u.perTrip("FOOD"), 1e-9);
 	}
 
 	@Test

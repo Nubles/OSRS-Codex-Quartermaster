@@ -9,6 +9,9 @@ import java.util.Map;
 /** Works out a {@link Plan}: how many trips the items held support, and what to buy for more. */
 public final class Planner
 {
+	/** Units a trip below which a supply is taken to come back rather than be used. */
+	static final double KEPT = 0.05;
+
 	private Planner()
 	{
 	}
@@ -48,8 +51,9 @@ public final class Planner
 			}
 			long inStorage = supply.count(stored);
 			long have = supply.count(held) + inStorage;
-			// Measured amounts are averages; a fraction of a unit a trip is noise, not a supply.
-			boolean kept = perTrip < 0.5;
+			// Nothing used is a tool that comes back. A measured average as small as one teleport
+			// every ten trips is still used up, so only a trace counts as kept.
+			boolean kept = perTrip < KEPT;
 			int trips = kept ? Plan.UNLIMITED : (int) Math.min(Integer.MAX_VALUE - 1, (long) Math.floor(have / perTrip));
 
 			long shortfall = kept ? 0 : Math.max(0, (long) Math.ceil(target * perTrip - have));

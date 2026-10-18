@@ -35,6 +35,7 @@ import net.runelite.api.GameState;
 import net.runelite.api.Item;
 import net.runelite.api.ItemComposition;
 import net.runelite.api.ItemContainer;
+import net.runelite.api.ParamID;
 import net.runelite.api.Player;
 import net.runelite.api.ScriptID;
 import net.runelite.api.events.ActorDeath;
@@ -323,6 +324,7 @@ public class CodexQuartermasterPlugin extends Plugin
 			return;
 		}
 		ticks++;
+		checkIron();
 		if (readStorage && bankOpen)
 		{
 			readStorage = false;
@@ -374,7 +376,19 @@ public class CodexQuartermasterPlugin extends Plugin
 	/** Iron accounts cannot use the Grand Exchange, so restocking is gathered, not bought. */
 	private boolean ironman()
 	{
-		return client.getGameState() == GameState.LOGGED_IN && client.getVarbitValue(VarbitID.IRONMAN) > 0;
+		return quarters != null && quarters.isIron();
+	}
+
+	/** Notes whether the account is an iron one, which is only known while logged in. */
+	private void checkIron()
+	{
+		boolean iron = client.getVarbitValue(VarbitID.IRONMAN) > 0;
+		if (quarters != null && quarters.isIron() != iron)
+		{
+			quarters.setIron(iron);
+			unsaved = true;
+			dirty = true;
+		}
 	}
 
 	/**
@@ -441,6 +455,7 @@ public class CodexQuartermasterPlugin extends Plugin
 	{
 		Map<Integer, Long> items = contents(client.getItemContainer(InventoryID.INV));
 		contents(client.getItemContainer(InventoryID.WORN)).forEach((id, q) -> items.merge(id, q, Long::sum));
+		addQuiverAmmo(items);
 		boolean pouch = false;
 		for (int id : POUCHES)
 		{
@@ -461,6 +476,28 @@ public class CodexQuartermasterPlugin extends Plugin
 			}
 		}
 		return items;
+	}
+
+	/**
+	 * Dizana's quiver holds a second stack of ammo outside the worn items. It goes where the quiver
+	 * goes, so it is carried when the quiver is.
+	 */
+	private void addQuiverAmmo(Map<Integer, Long> items)
+	{
+		int ammo = client.getVarpValue(VarPlayerID.DIZANAS_QUIVER_TEMP_AMMO);
+		int amount = client.getVarpValue(VarPlayerID.DIZANAS_QUIVER_TEMP_AMMO_AMOUNT);
+		if (ammo <= 0 || amount <= 0)
+		{
+			return;
+		}
+		for (int id : items.keySet())
+		{
+			if (itemManager.getItemComposition(id).getIntValue(ParamID.QUIVER_AMMO_AVAILABLE) == 1)
+			{
+				items.merge(itemManager.canonicalize(ammo), (long) amount, Long::sum);
+				return;
+			}
+		}
 	}
 
 	/**

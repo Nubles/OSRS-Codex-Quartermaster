@@ -480,7 +480,14 @@ public class QuartermasterPanel extends PluginPanel
 			Theme.small(), Theme.TEXT_MUTED, WIDTH - 12), BorderLayout.CENTER);
 		JPanel buttons = new JPanel(new FlowLayout(FlowLayout.LEFT, 0, 0));
 		buttons.setOpaque(false);
-		buttons.add(new CodexButton("Save my inventory as a kit", true, actions::capture));
+		if (view.player != null)
+		{
+			buttons.add(new CodexButton("Save my inventory as a kit", true, actions::capture));
+		}
+		else
+		{
+			buttons.add(Ui.label("Log in to save a kit", Theme.small(), Theme.TEXT_FAINT));
+		}
 		save.add(buttons, BorderLayout.SOUTH);
 		stack.add(save);
 

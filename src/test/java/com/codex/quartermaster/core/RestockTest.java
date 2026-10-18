@@ -100,6 +100,17 @@ public class RestockTest
 	}
 
 	@Test
+	public void aRarelyUsedTeleportStillRunsOut()
+	{
+		Usage usage = new com.google.gson.Gson().fromJson(
+			"{\"trips\":8,\"perTrip\":{\"item:" + ItemID.TELETAB_BARROWS + "\":0.125}}", Usage.class).repair();
+		Plan plan = Planner.plan(kit(Supply.itemKey(ItemID.TELETAB_BARROWS), 1), usage, items(ItemID.TELETAB_BARROWS, 3),
+			Fixtures::price, 10, true);
+		assertEquals(24, plan.trips());
+		assertTrue(plan.getLines().get(0).isMeasured());
+	}
+
+	@Test
 	public void tripsRoundDownAndAHugeBankDoesNotOverflow()
 	{
 		Plan plan = Planner.plan(kit("FOOD", 1), null, items(ItemID.SHARK, Integer.MAX_VALUE), Fixtures::price, 10, true);

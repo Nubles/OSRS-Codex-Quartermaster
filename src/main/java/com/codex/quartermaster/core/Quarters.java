@@ -34,6 +34,8 @@ public class Quarters
 	private int saved;
 	/** Potion doses in the bank's potion storage, by each potion's 1-dose item. */
 	private Map<Integer, Long> stored = new HashMap<>();
+	/** An iron account, remembered so the panel stays right while logged out. */
+	private boolean iron;
 
 	// A trip in progress is not saved: what happens between a logout and the next login is not known.
 	private transient Map<Integer, Long> tripStart;
@@ -66,6 +68,16 @@ public class Quarters
 	public void observeStorage(Map<Integer, Long> doses)
 	{
 		stored = new HashMap<>(doses);
+	}
+
+	public boolean isIron()
+	{
+		return iron;
+	}
+
+	public void setIron(boolean iron)
+	{
+		this.iron = iron;
 	}
 
 	public Map<Integer, Long> getStored()
