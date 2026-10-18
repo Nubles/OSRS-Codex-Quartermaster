@@ -3,9 +3,11 @@ package com.codex.quartermaster.core;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.function.IntPredicate;
 
 /**
@@ -30,10 +32,15 @@ public class Quarters
 	private int target = DEFAULT_TARGET;
 	private Map<String, Usage> usage = new HashMap<>();
 	private int saved;
+	/** Potion doses in the bank's potion storage, by each potion's 1-dose item. */
+	private Map<Integer, Long> stored = new HashMap<>();
+	/** An iron account, remembered so the panel stays right while logged out. */
+	private boolean iron;
 
-	private Map<Integer, Long> tripStart;
-	private long tripStartAt;
-	private String tripKit;
+	// A trip in progress is not saved: what happens between a logout and the next login is not known.
+	private transient Map<Integer, Long> tripStart;
+	private transient long tripStartAt;
+	private transient String tripKit;
 
 	public Map<Integer, Long> getBank()
 	{
@@ -55,6 +62,27 @@ public class Quarters
 	{
 		bank = new HashMap<>(items);
 		bankSeen = now;
+	}
+
+	/** The doses in the bank's potion storage, read whenever the bank is open. */
+	public void observeStorage(Map<Integer, Long> doses)
+	{
+		stored = new HashMap<>(doses);
+	}
+
+	public boolean isIron()
+	{
+		return iron;
+	}
+
+	public void setIron(boolean iron)
+	{
+		this.iron = iron;
+	}
+
+	public Map<Integer, Long> getStored()
+	{
+		return stored;
 	}
 
 	public int getTarget()
@@ -121,7 +149,7 @@ public class Quarters
 
 	public Plan plan(Kit kit, Map<Integer, Long> carried, Prices prices, boolean measured)
 	{
-		return Planner.plan(kit, usage.get(kit.getId()), held(carried), prices, target, measured);
+		return Planner.plan(kit, usage.get(kit.getId()), held(carried), stored, prices, target, measured);
 	}
 
 	/**
@@ -132,17 +160,28 @@ public class Quarters
 	 */
 	public Kit capture(String name, Map<Integer, Long> carried, IntPredicate supply)
 	{
+		return capture(name, carried, supply, id -> true);
+	}
+
+	/**
+	 * @param stackable whether an item stacks; a single unstackable item that is not a pooled
+	 *     supply, such as a spade, is taken to come back every trip until a trip shows otherwise
+	 */
+	public Kit capture(String name, Map<Integer, Long> carried, IntPredicate supply, IntPredicate stackable)
+	{
 		Map<String, Long> counts = new LinkedHashMap<>();
 		List<Integer> ids = new ArrayList<>(carried.keySet());
 		Collections.sort(ids);
 		for (int id : ids)
 		{
-			if (!Supplies.pooled(id) && !supply.test(id))
+			Long q = carried.get(id);
+			if (q == null || q <= 0 || Supplies.never(id) || !Supplies.pooled(id) && !supply.test(id))
 			{
 				continue;
 			}
 			String key = Supplies.keyFor(id);
-			counts.merge(key, carried.get(id) * Supplies.get(key).getUnits().get(id), Long::sum);
+			boolean tool = !Supplies.pooled(id) && q == 1 && !stackable.test(id);
+			counts.merge(key, tool ? 0 : q * Supplies.get(key).getUnits().get(id), Long::sum);
 		}
 		if (counts.isEmpty())
 		{
@@ -204,19 +243,72 @@ public class Quarters
 	}
 
 	/**
-	 * Picks the saved kit that is packed, when one clearly is and it is not already chosen.
+	 * How closely what is carried matches a kit: the share of the kit's supplies that are packed,
+	 * marked down for each pooled supply carried that the kit does not take. So a food-only kit is
+	 * not a match for a full boss inventory just because it has food in it.
+	 */
+	public static double match(Kit kit, Map<Integer, Long> carried)
+	{
+		if (kit.getNeeds().isEmpty())
+		{
+			return 0;
+		}
+		List<Supply> supplies = new ArrayList<>();
+		int found = 0;
+		for (Need n : kit.getNeeds())
+		{
+			Supply s = Supplies.get(n.getSupply());
+			if (s == null)
+			{
+				continue;
+			}
+			supplies.add(s);
+			if (s.count(carried) > 0)
+			{
+				found++;
+			}
+		}
+		Set<String> extra = new HashSet<>();
+		for (Map.Entry<Integer, Long> e : carried.entrySet())
+		{
+			int id = e.getKey();
+			if (e.getValue() <= 0 || !Supplies.pooled(id))
+			{
+				continue;
+			}
+			boolean taken = false;
+			for (Supply s : supplies)
+			{
+				taken |= s.getUnits().containsKey(id);
+			}
+			if (!taken)
+			{
+				extra.add(Supplies.keyFor(id));
+			}
+		}
+		return found / (double) (kit.getNeeds().size() + extra.size());
+	}
+
+	/**
+	 * Picks the saved kit that is packed, when one clearly is and it is not already chosen. A
+	 * saved kit wins a tie with a preset, since the player made it for exactly this.
 	 *
 	 * @return the kit switched to, or null when the choice stays
 	 */
 	public Kit recognise(Map<Integer, Long> carried)
 	{
 		Kit current = activeKit();
-		double best = packed(current, carried);
+		double best = match(current, carried);
+		boolean presetChosen = current.isPreset();
 		Kit pick = null;
 		for (Kit k : kits)
 		{
-			double score = packed(k, carried);
-			if (score >= MATCH && score > best)
+			if (k == current)
+			{
+				continue;
+			}
+			double score = match(k, carried);
+			if (score >= MATCH && (score > best || presetChosen && pick == null && score >= best))
 			{
 				best = score;
 				pick = k;
@@ -277,7 +369,7 @@ public class Quarters
 			long u = Math.max(0, s.count(start) - s.count(carried));
 			used.put(s.getKey(), u);
 			total += u;
-			cost += Planner.cost(s, u, prices);
+			cost += Planner.cost(s, u, start, prices);
 		}
 		if (total == 0)
 		{
@@ -307,6 +399,10 @@ public class Quarters
 		}
 		usage.values().removeIf(u -> u == null);
 		usage.values().forEach(Usage::repair);
+		if (stored == null)
+		{
+			stored = new HashMap<>();
+		}
 		if (target < 1)
 		{
 			target = DEFAULT_TARGET;

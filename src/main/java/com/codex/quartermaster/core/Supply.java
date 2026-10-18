@@ -18,20 +18,24 @@ public final class Supply
 	private final String unit;
 	private final int icon;
 	private final Map<Integer, Integer> units;
+	/** Each item's full form: the 4-dose potion for its lower doses, a whole cake for a slice. */
+	private final Map<Integer, Integer> full;
 
-	Supply(String key, String name, String unit, int icon, Map<Integer, Integer> units)
+	Supply(String key, String name, String unit, int icon, Map<Integer, Integer> units, Map<Integer, Integer> full)
 	{
 		this.key = key;
 		this.name = name;
 		this.unit = unit;
 		this.icon = icon;
 		this.units = Collections.unmodifiableMap(new LinkedHashMap<>(units));
+		this.full = Collections.unmodifiableMap(new LinkedHashMap<>(full));
 	}
 
 	/** A supply that is one item and nothing else, such as a teleport tablet or a rune. */
 	public static Supply item(int itemId)
 	{
-		return new Supply(itemKey(itemId), null, null, itemId, Collections.singletonMap(itemId, 1));
+		Map<Integer, Integer> one = Collections.singletonMap(itemId, 1);
+		return new Supply(itemKey(itemId), null, null, itemId, one, Collections.singletonMap(itemId, itemId));
 	}
 
 	public static String itemKey(int itemId)
@@ -70,6 +74,19 @@ public final class Supply
 	public Map<Integer, Integer> getUnits()
 	{
 		return units;
+	}
+
+	/** The form of an item a player buys or withdraws whole: a potion's 4-dose, a cake for a slice. */
+	public int fullForm(int itemId)
+	{
+		Integer f = full.get(itemId);
+		return f == null ? itemId : f;
+	}
+
+	/** Whether this item is bought as it is, rather than being a part of something else. */
+	public boolean isFullForm(int itemId)
+	{
+		return units.containsKey(itemId) && fullForm(itemId) == itemId;
 	}
 
 	/** How much of this supply a set of items holds, in units. */

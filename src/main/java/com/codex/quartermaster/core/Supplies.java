@@ -2,8 +2,10 @@ package com.codex.quartermaster.core;
 
 import java.util.Collection;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Set;
 import net.runelite.api.gameval.ItemID;
 
 /**
@@ -16,9 +18,17 @@ public final class Supplies
 	private static final Map<String, Supply> GROUPS = new LinkedHashMap<>();
 	/** The first group each item belongs to, which is the one a captured kit files it under. */
 	private static final Map<Integer, String> HOME = new LinkedHashMap<>();
+	/** Food that is part of something bought whole. */
+	private static final Map<Integer, Integer> PARTS = new LinkedHashMap<>();
+	/** Carried but never a supply, so a saved kit leaves them out. */
+	private static final Set<Integer> NEVER = new HashSet<>();
 
 	static
 	{
+		PARTS.put(ItemID.PARTIAL_CAKE, ItemID.CAKE);
+		PARTS.put(ItemID.CAKE_SLICE, ItemID.CAKE);
+		NEVER.add(ItemID.COINS);
+		NEVER.add(ItemID.PLATINUM);
 		group("FOOD", "Food", "hp", ItemID.SHARK,
 			ItemID.MANTARAY, 22,
 			ItemID.ANGLERFISH, 22,
@@ -41,7 +51,7 @@ public final class Supplies
 			ItemID._3DOSEPOTIONOFSARADOMIN, 3,
 			ItemID._2DOSEPOTIONOFSARADOMIN, 2,
 			ItemID._1DOSEPOTIONOFSARADOMIN, 1);
-		group("PRAYER", "Prayer and restores", "doses", ItemID._4DOSEPRAYERRESTORE,
+		group("PRAYER", "Prayer restores", "doses", ItemID._4DOSEPRAYERRESTORE,
 			ItemID._4DOSEPRAYERRESTORE, 4,
 			ItemID._3DOSEPRAYERRESTORE, 3,
 			ItemID._2DOSEPRAYERRESTORE, 2,
@@ -138,15 +148,31 @@ public final class Supplies
 	{
 	}
 
+	/**
+	 * Adds a pooled supply from item and unit pairs. Potions are listed strongest dose first, so a
+	 * run of falling doses is one potion and its 4-dose is the form it is bought in.
+	 */
 	private static void group(String key, String name, String unit, int icon, int... pairs)
 	{
 		Map<Integer, Integer> units = new LinkedHashMap<>();
+		Map<Integer, Integer> full = new LinkedHashMap<>();
+		boolean doses = "doses".equals(unit);
+		int head = -1;
+		int last = Integer.MAX_VALUE;
 		for (int i = 0; i + 1 < pairs.length; i += 2)
 		{
-			units.put(pairs[i], pairs[i + 1]);
-			HOME.putIfAbsent(pairs[i], key);
+			int id = pairs[i];
+			int value = pairs[i + 1];
+			if (!doses || head < 0 || value >= last)
+			{
+				head = id;
+			}
+			last = value;
+			units.put(id, value);
+			full.put(id, doses ? head : PARTS.getOrDefault(id, id));
+			HOME.putIfAbsent(id, key);
 		}
-		GROUPS.put(key, new Supply(key, name, unit, icon, units));
+		GROUPS.put(key, new Supply(key, name, unit, icon, units, full));
 	}
 
 	/** The supply for a key: a pooled group, or a single item for "item:" keys. Null when unknown. */
@@ -176,6 +202,12 @@ public final class Supplies
 	{
 		String group = HOME.get(itemId);
 		return group != null ? group : Supply.itemKey(itemId);
+	}
+
+	/** Coins and the like: carried on a trip, but not something a trip runs out of. */
+	public static boolean never(int itemId)
+	{
+		return NEVER.contains(itemId);
 	}
 
 	public static boolean pooled(int itemId)

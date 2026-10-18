@@ -107,7 +107,7 @@ public final class Theme
 		{
 			return EMBER;
 		}
-		if (trips >= warn * 8)
+		if (trips >= Math.max(1, warn) * 8)
 		{
 			return GREEN;
 		}

@@ -28,6 +28,8 @@ public final class View
 	final Map<Integer, String> names;
 	final int warn;
 	final long now;
+	/** An iron account, which gathers its supplies rather than buying them. */
+	boolean ironman;
 
 	/**
 	 * @param active the chosen kit's plan, or null when no account is open
@@ -54,6 +56,12 @@ public final class View
 	public static View loggedOut()
 	{
 		return new View(State.LOGGED_OUT, null, null, null, null, 0, 0, false, null, 3, System.currentTimeMillis());
+	}
+
+	public View ironman(boolean value)
+	{
+		ironman = value;
+		return this;
 	}
 
 	String name(int itemId)

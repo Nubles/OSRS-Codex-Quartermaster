@@ -134,9 +134,14 @@ public final class Plan
 		private final List<Buy> buys;
 		private final long tripCost;
 		private final Map<Integer, Long> held;
+		private final long stored;
+		private final int buyItem;
 
-		Line(Supply supply, long have, double perTrip, boolean measured, int trips, long shortfall, List<Buy> buys, long tripCost, Map<Integer, Long> held)
+		Line(Supply supply, long have, double perTrip, boolean measured, int trips, long shortfall, List<Buy> buys,
+			long tripCost, Map<Integer, Long> held, long stored, int buyItem)
 		{
+			this.stored = stored;
+			this.buyItem = buyItem;
 			this.supply = supply;
 			this.have = have;
 			this.perTrip = perTrip;
@@ -205,6 +210,18 @@ public final class Plan
 		public long getTripCost()
 		{
 			return tripCost;
+		}
+
+		/** Units of this supply in the bank's potion storage, already counted in {@link #getHave()}. */
+		public long getStored()
+		{
+			return stored;
+		}
+
+		/** The item this supply is restocked with, or -1 when nothing that counts has a price. */
+		public int getBuyItem()
+		{
+			return buyItem;
 		}
 
 		/** How many of each item that counts toward this supply are held, most first. */

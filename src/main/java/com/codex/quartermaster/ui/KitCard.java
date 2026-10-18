@@ -27,17 +27,17 @@ class KitCard extends Card
 		String note;
 		if (first == null)
 		{
-			note = "nothing is used up";
+			note = "Nothing is used up";
 		}
 		else if (trips == 0)
 		{
-			note = "out of " + view.name(first).toLowerCase();
+			note = "Out of " + view.name(first).toLowerCase(java.util.Locale.ENGLISH);
 		}
 		else
 		{
 			note = view.name(first) + " first";
 		}
-		add(new Face(plan.getKit().getName(), (plan.getKit().isPreset() ? "Preset" : "Your kit") + "  -  " + note,
+		add(new Face(plan.getKit().getName(), note,
 			trips == Plan.UNLIMITED ? "-" : Format.trips(trips), color, chosen), BorderLayout.CENTER);
 		// Chosen by clicking anywhere but the forget button, which is added after so it keeps its own clicks.
 		onClick(choose);

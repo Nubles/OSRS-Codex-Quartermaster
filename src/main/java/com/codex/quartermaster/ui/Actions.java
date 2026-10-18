@@ -11,4 +11,7 @@ public interface Actions
 	void capture();
 
 	void forget(String kitId);
+
+	/** Take a supply out of a saved kit, for something that was carried but is not used up. */
+	void drop(String kitId, String supply);
 }

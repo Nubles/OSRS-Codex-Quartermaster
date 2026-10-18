@@ -19,6 +19,8 @@ public class Usage
 
 	private int trips;
 	private Map<String, Double> perTrip = new LinkedHashMap<>();
+	/** Trips each supply has been measured over, which is fewer than all for one added later. */
+	private Map<String, Integer> counts = new LinkedHashMap<>();
 	private List<Trip> recent = new ArrayList<>();
 
 	public int getTrips()
@@ -67,14 +69,17 @@ public class Usage
 	void record(Kit kit, Trip trip)
 	{
 		trips++;
-		int n = Math.min(trips, WINDOW);
 		for (Need need : kit.getNeeds())
 		{
 			String key = need.getSupply();
 			long used = trip.getUsed().getOrDefault(key, 0L);
 			Double avg = perTrip.get(key);
-			// A supply added to the kit after it was first measured starts from its first trip.
-			perTrip.put(key, avg == null ? used : avg + (used - avg) / n);
+			// A supply added to the kit after it was first measured starts from its first trip. Saves
+			// from before supplies were counted apart have measured every supply on every trip.
+			Integer count = counts.get(key);
+			int seen = (count != null ? count : avg == null ? 0 : trips - 1) + 1;
+			counts.put(key, seen);
+			perTrip.put(key, avg == null ? used : avg + (used - avg) / Math.min(seen, WINDOW));
 		}
 		recent.add(trip);
 		while (recent.size() > RECENT)
@@ -88,6 +93,10 @@ public class Usage
 		if (perTrip == null)
 		{
 			perTrip = new LinkedHashMap<>();
+		}
+		if (counts == null)
+		{
+			counts = new LinkedHashMap<>();
 		}
 		if (recent == null)
 		{
