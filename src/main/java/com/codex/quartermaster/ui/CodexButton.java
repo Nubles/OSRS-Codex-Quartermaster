@@ -11,19 +11,25 @@ import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.awt.geom.RoundRectangle2D;
 import javax.swing.JComponent;
+import javax.swing.Timer;
 
 /** A gilt-edged button; the primary style is filled, the quiet style is just an outline. */
 public class CodexButton extends JComponent
 {
-	private final String text;
+	private String text;
+	private final String label;
 	private final boolean primary;
+	private Runnable action;
+	private Timer restore;
 	private boolean hover;
 	private boolean pressed;
 
 	public CodexButton(String text, boolean primary, Runnable action)
 	{
 		this.text = text;
+		this.label = text;
 		this.primary = primary;
+		this.action = action;
 		setFont(Theme.small());
 		setOpaque(false);
 		setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
@@ -62,12 +68,42 @@ public class CodexButton extends JComponent
 				boolean fire = pressed && contains(e.getPoint());
 				pressed = false;
 				repaint();
-				if (fire)
+				if (fire && CodexButton.this.action != null)
 				{
-					action.run();
+					CodexButton.this.action.run();
 				}
 			}
 		});
+	}
+
+	public void setAction(Runnable action)
+	{
+		this.action = action;
+	}
+
+	/** Shows a short confirmation in place of the label for a moment, such as "Copied". */
+	public void flash(String message)
+	{
+		text = message;
+		FontMetrics fm = getFontMetrics(getFont());
+		int w = Math.max(fm.stringWidth(label), fm.stringWidth(message)) + 20;
+		Dimension d = new Dimension(w, 22);
+		setPreferredSize(d);
+		setMinimumSize(d);
+		setMaximumSize(d);
+		revalidate();
+		repaint();
+		if (restore != null)
+		{
+			restore.stop();
+		}
+		restore = new Timer(1600, e ->
+		{
+			text = label;
+			repaint();
+		});
+		restore.setRepeats(false);
+		restore.start();
 	}
 
 	@Override

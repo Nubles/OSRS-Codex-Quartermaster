@@ -21,6 +21,7 @@ class TripRow extends JComponent
 		this.cost = Format.coins(trip.getCost());
 		setOpaque(false);
 		setPreferredSize(new Dimension(10, 28));
+		setToolTipText("<html>" + Ui.escape(when) + "<br>Used " + Ui.escape(used) + "<br>Cost " + cost + "</html>");
 	}
 
 	@Override

@@ -27,7 +27,7 @@ class SupplyRow extends JComponent
 	private final boolean first;
 	private final ItemIcons icons;
 
-	SupplyRow(Plan.Line line, View view, int target, boolean first, ItemIcons icons)
+	SupplyRow(Plan.Line line, View view, int target, boolean first, ItemIcons icons, boolean editable)
 	{
 		this.line = line;
 		this.name = view.name(line);
@@ -42,13 +42,21 @@ class SupplyRow extends JComponent
 		{
 			tip.append("<br>").append(Ui.escape(view.name(e.getKey()))).append(": ").append(String.format("%,d", e.getValue()));
 		}
-		if (line.getHeld().isEmpty())
+		if (line.getStored() > 0)
+		{
+			tip.append("<br>Potion storage: ").append(String.format("%,d", line.getStored())).append(" doses");
+		}
+		if (line.getHeld().isEmpty() && line.getStored() == 0)
 		{
 			tip.append("<br>None held");
 		}
 		if (!line.isKept())
 		{
 			tip.append("<br>").append(line.isMeasured() ? "Measured from your trips" : "Planned for this kit");
+		}
+		if (editable)
+		{
+			tip.append("<br><i>Right-click to remove it from this kit</i>");
 		}
 		setToolTipText(tip.append("</html>").toString());
 	}

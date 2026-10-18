@@ -6,6 +6,7 @@ import com.codex.quartermaster.core.Prices;
 import com.codex.quartermaster.core.Quarters;
 import com.codex.quartermaster.core.Trip;
 import com.codex.quartermaster.core.Usage;
+import com.codex.quartermaster.core.Warning;
 import com.codex.quartermaster.overlay.SupplyPlaque;
 import com.codex.quartermaster.ui.Actions;
 import com.codex.quartermaster.ui.Format;
@@ -35,15 +36,18 @@ import net.runelite.api.Item;
 import net.runelite.api.ItemComposition;
 import net.runelite.api.ItemContainer;
 import net.runelite.api.Player;
+import net.runelite.api.ScriptID;
 import net.runelite.api.events.ActorDeath;
 import net.runelite.api.events.GameStateChanged;
 import net.runelite.api.events.GameTick;
 import net.runelite.api.events.ItemContainerChanged;
+import net.runelite.api.events.VarbitChanged;
 import net.runelite.api.events.WidgetClosed;
 import net.runelite.api.events.WidgetLoaded;
 import net.runelite.api.gameval.InterfaceID;
 import net.runelite.api.gameval.InventoryID;
 import net.runelite.api.gameval.ItemID;
+import net.runelite.api.gameval.VarPlayerID;
 import net.runelite.api.gameval.VarbitID;
 import net.runelite.client.callback.ClientThread;
 import net.runelite.client.chat.ChatColorType;
@@ -78,6 +82,10 @@ public class CodexQuartermasterPlugin extends Plugin
 	private static final int SAVE_TICKS = 50;
 	/** Ticks between recounts at today's prices, about a minute. */
 	private static final int REPRICE_TICKS = 100;
+	private static final int[] POTION_STORE_VARS = {
+		VarPlayerID.POTIONSTORE_BASE_VAR_1, VarPlayerID.POTIONSTORE_BASE_VAR_2, VarPlayerID.POTIONSTORE_BASE_VAR_3,
+		VarPlayerID.POTIONSTORE_BASE_VAR_4, VarPlayerID.POTIONSTORE_BASE_VAR_5, VarPlayerID.POTIONSTORE_BASE_VAR_6
+	};
 	private static final int[] POUCH_RUNES = {
 		VarbitID.RUNE_POUCH_TYPE_1, VarbitID.RUNE_POUCH_TYPE_2, VarbitID.RUNE_POUCH_TYPE_3,
 		VarbitID.RUNE_POUCH_TYPE_4, VarbitID.RUNE_POUCH_TYPE_5, VarbitID.RUNE_POUCH_TYPE_6
@@ -129,6 +137,9 @@ public class CodexQuartermasterPlugin extends Plugin
 	/** What was carried when last seen, so the panel still counts it while logged out. */
 	private Map<Integer, Long> carried = Collections.emptyMap();
 	private boolean bankOpen;
+	/** The potion storage needs reading on the next tick the bank is open. */
+	private boolean readStorage;
+	private final Warning warning = new Warning();
 	private boolean dirty;
 	private boolean unsaved;
 	private int ticks;
@@ -196,6 +207,11 @@ public class CodexQuartermasterPlugin extends Plugin
 		if (event.getGameState() == GameState.LOGIN_SCREEN)
 		{
 			bankOpen = false;
+			if (quarters != null)
+			{
+				// What changes while logged out, on another client, is not what the trip used.
+				quarters.voidTrip();
+			}
 			save();
 			publish();
 		}
@@ -242,6 +258,18 @@ public class CodexQuartermasterPlugin extends Plugin
 	}
 
 	@Subscribe
+	public void onVarbitChanged(VarbitChanged event)
+	{
+		if (bankOpen)
+		{
+			for (int varp : POTION_STORE_VARS)
+			{
+				readStorage |= event.getVarpId() == varp;
+			}
+		}
+	}
+
+	@Subscribe
 	public void onWidgetLoaded(WidgetLoaded event)
 	{
 		if (event.getGroupId() != InterfaceID.BANKMAIN || quarters == null)
@@ -249,6 +277,7 @@ public class CodexQuartermasterPlugin extends Plugin
 			return;
 		}
 		bankOpen = true;
+		readStorage = true;
 		// The bank has just opened, so what is carried is still what came back from the trip.
 		Trip trip = quarters.endTrip(readCarried(), System.currentTimeMillis(), prices);
 		if (trip != null)
@@ -294,6 +323,11 @@ public class CodexQuartermasterPlugin extends Plugin
 			return;
 		}
 		ticks++;
+		if (readStorage && bankOpen)
+		{
+			readStorage = false;
+			readPotionStorage();
+		}
 		if (unsaved && ticks % SAVE_TICKS == 0)
 		{
 			save();
@@ -314,30 +348,20 @@ public class CodexQuartermasterPlugin extends Plugin
 		}
 		Plan plan = quarters.plan(kit, carried, prices, config.measured());
 		Plan.Line first = plan.limiting();
-		int trips = plan.trips();
-		if (first == null || trips > config.warnTrips())
+		if (first == null)
 		{
 			return;
 		}
-		String supply = supplyName(first).toLowerCase(Locale.ENGLISH);
-		// What is carried counts, so one trip left is the one setting out now.
-		String text;
-		if (trips == 0)
+		String text = warning.check(kit.getId(), kit.getName(), plan.trips(), config.warnTrips(),
+			supplyName(first).toLowerCase(Locale.ENGLISH), System.currentTimeMillis());
+		if (text == null)
 		{
-			text = "not enough " + supply + " for a full " + kit.getName() + " trip.";
-		}
-		else if (trips == 1)
-		{
-			text = "this is your last " + kit.getName() + " trip before " + supply + " runs out.";
-		}
-		else
-		{
-			text = trips + " " + kit.getName() + " trips left, counting this one; " + supply + " runs out first.";
+			return;
 		}
 		ChatMessageBuilder line = new ChatMessageBuilder()
 			.append(ChatColorType.HIGHLIGHT).append("Codex Quartermaster: ")
 			.append(ChatColorType.NORMAL).append(text);
-		if (plan.restockCost() > 0)
+		if (plan.restockCost() > 0 && !ironman())
 		{
 			line.append(" Restocking to " + plan.getTarget() + " trips costs " + Format.coins(plan.restockCost()) + ".");
 		}
@@ -345,6 +369,53 @@ public class CodexQuartermasterPlugin extends Plugin
 			.type(ChatMessageType.CONSOLE)
 			.runeLiteFormattedMessage(line.build())
 			.build());
+	}
+
+	/** Iron accounts cannot use the Grand Exchange, so restocking is gathered, not bought. */
+	private boolean ironman()
+	{
+		return client.getGameState() == GameState.LOGGED_IN && client.getVarbitValue(VarbitID.IRONMAN) > 0;
+	}
+
+	/**
+	 * Reads the doses kept in the bank's potion storage, which the bank itself does not list.
+	 * The game's own script says how many doses each stored potion has; they are filed under the
+	 * potion's 1-dose item so they pool with the rest. Only called on the client thread with the
+	 * bank open.
+	 */
+	private void readPotionStorage()
+	{
+		if (quarters == null)
+		{
+			return;
+		}
+		EnumComposition potions = client.getEnum(EnumID.POTIONSTORE_POTIONS);
+		if (potions == null)
+		{
+			return;
+		}
+		Map<Integer, Long> doses = new HashMap<>();
+		for (int potionEnum : potions.getIntVals())
+		{
+			EnumComposition potion = client.getEnum(potionEnum);
+			if (potion == null)
+			{
+				continue;
+			}
+			client.runScript(ScriptID.POTIONSTORE_DOSES, potionEnum);
+			int stored = client.getIntStack()[0];
+			int oneDose = potion.getIntValue(1);
+			if (stored > 0 && oneDose > 0)
+			{
+				doses.merge(oneDose, (long) stored, Long::sum);
+			}
+		}
+		if (!doses.equals(quarters.getStored()))
+		{
+			quarters.observeStorage(doses);
+			unsaved = true;
+			dirty = true;
+		}
 	}
 
 	private Map<Integer, Long> contents(ItemContainer container)
@@ -490,7 +561,8 @@ public class CodexQuartermasterPlugin extends Plugin
 		Player player = client.getLocalPlayer();
 		View.State state = !quarters.hasBank() ? View.State.WAITING_FOR_BANK : View.State.READY;
 		View view = new View(state, loggedIn && player != null ? player.getName() : null, chosen, plans, trips,
-			usage == null ? 0 : usage.getTrips(), quarters.getBankSeen(), bankOpen, new HashMap<>(names), config.warnTrips(), now);
+			usage == null ? 0 : usage.getTrips(), quarters.getBankSeen(), bankOpen, new HashMap<>(names), config.warnTrips(), now)
+			.ironman(ironman());
 
 		CodexQuartermasterConfig.PlaqueMode mode = config.plaque();
 		boolean showPlaque = loggedIn && quarters.hasBank() && chosen != null
@@ -577,7 +649,8 @@ public class CodexQuartermasterPlugin extends Plugin
 					return;
 				}
 				carried = readCarried();
-				Kit kit = quarters.capture(name.length() > 32 ? name.substring(0, 32) : name, carried, CodexQuartermasterPlugin.this::isSupply);
+				Kit kit = quarters.capture(name.length() > 32 ? name.substring(0, 32) : name, carried,
+					CodexQuartermasterPlugin.this::isSupply, id -> itemManager.getItemComposition(id).isStackable());
 				if (kit == null)
 				{
 					chatMessageManager.queue(QueuedMessage.builder()
@@ -592,6 +665,20 @@ public class CodexQuartermasterPlugin extends Plugin
 				unsaved = true;
 				save();
 				publish();
+			});
+		}
+
+		@Override
+		public void drop(String kitId, String supply)
+		{
+			clientThread.invokeLater(() ->
+			{
+				if (quarters != null && quarters.drop(kitId, supply))
+				{
+					unsaved = true;
+					save();
+					publish();
+				}
 			});
 		}
 

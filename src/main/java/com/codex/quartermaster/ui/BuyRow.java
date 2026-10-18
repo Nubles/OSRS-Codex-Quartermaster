@@ -27,6 +27,7 @@ class BuyRow extends JComponent
 		this.icons = icons;
 		setOpaque(false);
 		setPreferredSize(new Dimension(10, Well.SIZE + 4));
+		setToolTipText(name + ": " + note);
 	}
 
 	@Override
@@ -39,13 +40,15 @@ class BuyRow extends JComponent
 		int tx = Well.SIZE + 12;
 		g.setFont(Theme.body());
 		FontMetrics fm = g.getFontMetrics();
-		int aw = fm.stringWidth(amount);
 		int base = 2 + fm.getAscent() + 1;
-		Ui.shadowed(g, amount, w - aw, base, color);
-		Ui.shadowed(g, Ui.clip(name, fm, w - tx - aw - 8), tx, base, Theme.TEXT);
+		// The name gets the whole line; the quantity and the bill share the line below it.
+		Ui.shadowed(g, Ui.clip(name, fm, w - tx), tx, base, Theme.TEXT);
+		int low = 2 + Well.SIZE - 5;
+		int aw = fm.stringWidth(amount);
+		Ui.shadowed(g, amount, w - aw, low, color);
 		g.setFont(Theme.small());
-		g.setColor(Theme.TEXT_FAINT);
-		g.drawString(Ui.clip(note, g.getFontMetrics(), w - tx), tx, 2 + Well.SIZE - 6);
+		g.setColor(Theme.TEXT_MUTED);
+		g.drawString(Ui.clip(note, g.getFontMetrics(), w - tx - aw - 6), tx, low);
 		g.dispose();
 	}
 }

@@ -20,7 +20,9 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import javax.swing.JComponent;
+import javax.swing.JMenuItem;
 import javax.swing.JPanel;
+import javax.swing.JPopupMenu;
 import javax.swing.JScrollPane;
 import javax.swing.ScrollPaneConstants;
 import javax.swing.SwingUtilities;
@@ -67,6 +69,8 @@ public class QuartermasterPanel extends PluginPanel
 	private final JScrollPane kits = scroller();
 
 	private View view = View.loggedOut();
+	/** Which pages still show an older view; a page is only rebuilt when it is looked at. */
+	private final boolean[] stale = {true, true, true};
 
 	public QuartermasterPanel(ItemIcons icons, Actions actions)
 	{
@@ -95,7 +99,7 @@ public class QuartermasterPanel extends PluginPanel
 		tabs.onChange(this::showTab);
 		target.setSelected(1, false);
 		target.onChange(i -> actions.target(TARGETS[i]));
-		rebuild();
+		refresh(true);
 	}
 
 	private static JScrollPane scroller()
@@ -125,14 +129,52 @@ public class QuartermasterPanel extends PluginPanel
 			}
 		}
 		updateCrest();
-		rebuild();
+		java.util.Arrays.fill(stale, true);
+		refresh(false);
 	}
 
-	/** Opens one tab, for previews and tests. */
+	/** Opens one tab. */
 	public void showTab(int index)
 	{
 		tabs.setSelected(index, false);
 		cards.show(content, TABS[index]);
+		refresh(true);
+	}
+
+	@Override
+	public void onActivate()
+	{
+		refresh(true);
+	}
+
+	/**
+	 * Rebuilds the page on show if it is out of date. Eating a shark changes the view, so while the
+	 * panel is closed nothing is rebuilt at all, and while it is open only the page in view is.
+	 */
+	private void refresh(boolean force)
+	{
+		if (!force && !isShowing())
+		{
+			return;
+		}
+		int page = tabs.getSelected();
+		if (!stale[page])
+		{
+			return;
+		}
+		stale[page] = false;
+		if (page == 0)
+		{
+			rebuildSupplies();
+		}
+		else if (page == 1)
+		{
+			rebuildRestock();
+		}
+		else
+		{
+			rebuildKits();
+		}
 	}
 
 	private void updateCrest()
@@ -163,13 +205,6 @@ public class QuartermasterPanel extends PluginPanel
 		crest.update(heading, trips, false, status, shortStatus, trips <= view.warn ? color : Theme.mix(Theme.TEXT_MUTED, Theme.GOLD, 0.35), trips <= view.warn ? color : Theme.GOLD);
 	}
 
-	private void rebuild()
-	{
-		rebuildSupplies();
-		rebuildRestock();
-		rebuildKits();
-	}
-
 	private boolean waiting(StackPanel stack)
 	{
 		if (view.active == null)
@@ -198,7 +233,7 @@ public class QuartermasterPanel extends PluginPanel
 		Plan plan = view.active;
 		JPanel tiles = new JPanel(new GridLayout(1, 2, 6, 0));
 		tiles.setOpaque(false);
-		tiles.add(new StatTile(Format.coins(plan.tripCost()), "Per trip", "at today's prices", Theme.GOLD));
+		tiles.add(new StatTile(Format.coins(plan.tripCost()), "Per trip", view.ironman ? "GE value" : "GE prices", Theme.GOLD));
 		boolean measured = view.measured >= Usage.TRUSTED;
 		tiles.add(new StatTile(measured ? String.valueOf(view.measured) : "-", "Measured",
 			measured ? "trips learned" : view.measured == 1 ? "1 trip so far" : "make a trip", measured ? Theme.TEAL : Theme.TEXT_MUTED));
@@ -210,16 +245,28 @@ public class QuartermasterPanel extends PluginPanel
 		List<Plan.Line> lines = new ArrayList<>(plan.getLines());
 		lines.sort((a, b) -> Integer.compare(a.getTrips(), b.getTrips()));
 		Plan.Line first = plan.limiting();
+		boolean editable = !plan.getKit().isPreset() && plan.getKit().getNeeds().size() > 1;
 		for (Plan.Line line : lines)
 		{
-			rows.add(new SupplyRow(line, view, plan.getTarget(), line == first, icons));
+			SupplyRow row = new SupplyRow(line, view, plan.getTarget(), line == first, icons, editable);
+			if (editable)
+			{
+				String kitId = plan.getKit().getId();
+				String key = line.getSupply().getKey();
+				JPopupMenu menu = new JPopupMenu();
+				JMenuItem remove = new JMenuItem("Remove " + view.name(line) + " from this kit");
+				remove.addActionListener(e -> actions.drop(kitId, key));
+				menu.add(remove);
+				row.setComponentPopupMenu(menu);
+			}
+			rows.add(row);
 		}
 		list.add(rows, BorderLayout.CENTER);
 		stack.add(list);
 		String foot = measured
 			? "* measured from your trips with this kit"
 			: plan.getKit().isPreset() ? "Typical amounts until your own trips are measured" : "As packed until your own trips are measured";
-		stack.add(Ui.wrapped(foot, Theme.small(), Theme.TEXT_FAINT, WIDTH - 16));
+		stack.add(Ui.wrapped(foot, Theme.small(), Theme.TEXT_FAINT, WIDTH));
 
 		if (!view.trips.isEmpty())
 		{
@@ -286,20 +333,39 @@ public class QuartermasterPanel extends PluginPanel
 			return;
 		}
 		Plan plan = view.active;
-		List<Plan.Buy> shopping = plan.shopping();
-		List<Plan.Line> unbuyable = plan.unbuyable();
 		int trips = plan.trips();
+		List<Plan.Line> missing = new ArrayList<>();
+		for (Plan.Line line : plan.getLines())
+		{
+			if (line.getShort() > 0)
+			{
+				missing.add(line);
+			}
+		}
+		List<Plan.Buy> shopping = view.ironman ? java.util.Collections.emptyList() : plan.shopping();
+		List<Plan.Line> unbuyable = view.ironman ? missing : plan.unbuyable();
 
 		JPanel tiles = new JPanel(new GridLayout(1, 2, 6, 0));
 		tiles.setOpaque(false);
-		tiles.add(new StatTile(shopping.isEmpty() ? "Nothing" : Format.coins(plan.restockCost()), "Restock", shopping.isEmpty() ? "already stocked" : shopping.size() + (shopping.size() == 1 ? " item" : " items"), Theme.GOLD));
+		if (view.ironman)
+		{
+			tiles.add(new StatTile(missing.isEmpty() ? "Nothing" : String.valueOf(missing.size()), "To gather",
+				missing.isEmpty() ? "already stocked" : missing.size() == 1 ? "supply short" : "supplies short", Theme.GOLD));
+		}
+		else
+		{
+			tiles.add(new StatTile(shopping.isEmpty() ? "Nothing" : Format.coins(plan.restockCost()), "Restock",
+				shopping.isEmpty() ? "already stocked" : shopping.size() + (shopping.size() == 1 ? " item" : " items"), Theme.GOLD));
+		}
+		String after = view.ironman ? "once gathered" : unbuyable.isEmpty() ? "after buying" : "some not sold";
 		tiles.add(new StatTile(trips == Plan.UNLIMITED ? "-" : Format.trips(trips) + " to " + Math.max(trips, plan.getTarget()),
-			"Trips", unbuyable.isEmpty() ? "after buying" : "some not sold", Theme.trips(Math.min(trips, plan.getTarget()), view.warn)));
+			"Trips", after, Theme.trips(Math.min(trips, plan.getTarget()), view.warn)));
 		stack.add(tiles);
 
-		if (shopping.isEmpty() && unbuyable.isEmpty())
+		if (missing.isEmpty())
 		{
-			stack.add(note("Stocked for " + plan.getTarget() + " trips", "Your bank already holds enough for " + plan.getTarget() + " trips of " + plan.getKit().getName() + ". Pick a higher target to plan a bigger restock."));
+			stack.add(note("Stocked for " + plan.getTarget() + " trips", "Your bank already holds enough for "
+				+ plan.getTarget() + " trips of " + plan.getKit().getName() + ". Pick a higher target to plan a bigger restock."));
 			replace(restock, stack);
 			return;
 		}
@@ -311,37 +377,83 @@ public class QuartermasterPanel extends PluginPanel
 			for (Plan.Buy buy : shopping)
 			{
 				rows.add(new BuyRow(buy.getItemId(), view.name(buy.getItemId()),
-					"Buy " + String.format(Locale.ENGLISH, "%,d", buy.getQuantity()) + " at " + Format.coins(buy.getPrice()),
+					String.format(Locale.ENGLISH, "%,d", buy.getQuantity()) + " at " + Format.coins(buy.getPrice()) + " ea",
 					Format.coins(buy.getCost()), Theme.GOLD, icons));
 			}
 			list.add(rows, BorderLayout.CENTER);
 			stack.add(list);
-			JPanel buttons = new JPanel(new FlowLayout(FlowLayout.LEFT, 0, 0));
-			buttons.setOpaque(false);
-			buttons.add(new CodexButton("Copy shopping list", false, () -> copy(plan)));
-			stack.add(buttons);
+			stack.add(copyButton(plan));
 		}
 		if (!unbuyable.isEmpty())
 		{
-			stack.add(new SectionHeader("Not on the exchange"));
+			stack.add(new SectionHeader(view.ironman ? "To make or gather" : "Not on the exchange"));
 			Card list = new Card(new BorderLayout());
-			list.accent(Theme.EMBER);
+			list.accent(view.ironman ? Theme.TEAL : Theme.EMBER);
 			StackPanel rows = new StackPanel(2, 0);
 			for (Plan.Line line : unbuyable)
 			{
-				rows.add(new BuyRow(line.getSupply().getIcon(), view.name(line),
-					"Make or gather " + Format.amount(line.getShort()) + View.unit(line) + " more", "-", Theme.EMBER, icons));
+				rows.add(new BuyRow(line.getBuyItem() >= 0 ? line.getBuyItem() : line.getSupply().getIcon(), view.name(line),
+					Format.amount(line.getShort()) + View.unit(line) + " more", gatherCount(line),
+					view.ironman ? Theme.TEAL : Theme.EMBER, icons));
 			}
 			list.add(rows, BorderLayout.CENTER);
 			stack.add(list);
+			if (view.ironman)
+			{
+				stack.add(copyButton(plan));
+			}
 		}
-		stack.add(Ui.wrapped("Each supply is bought as whichever item is cheapest per dose or hitpoint, at the client's Grand Exchange prices.", Theme.small(), Theme.TEXT_FAINT, WIDTH - 16));
+		stack.add(Ui.wrapped(view.ironman
+				? "Counted in the potion or food you use most, so a 4-dose potion stands for four doses."
+				: "Each supply is bought as the item you already use most of, at the client's Grand Exchange prices.",
+			Theme.small(), Theme.TEXT_FAINT, WIDTH));
 		replace(restock, stack);
+	}
+
+	/** How many of the usual item make up what a line is short, such as "x103", or "-" when unknown. */
+	private static String gatherCount(Plan.Line line)
+	{
+		Integer per = line.getBuyItem() >= 0 ? line.getSupply().getUnits().get(line.getBuyItem()) : null;
+		if (per == null || per <= 0)
+		{
+			return Format.amount(line.getShort());
+		}
+		return "x" + Format.amount((line.getShort() + per - 1) / per);
+	}
+
+	private JComponent copyButton(Plan plan)
+	{
+		JPanel buttons = new JPanel(new FlowLayout(FlowLayout.LEFT, 0, 0));
+		buttons.setOpaque(false);
+		CodexButton button = new CodexButton(view.ironman ? "Copy the list" : "Copy shopping list", false, null);
+		button.setAction(() ->
+		{
+			copy(plan);
+			button.flash("Copied to clipboard");
+		});
+		buttons.add(button);
+		return buttons;
 	}
 
 	private void copy(Plan plan)
 	{
-		StringBuilder text = new StringBuilder(plan.getKit().getName()).append(" restock for ").append(plan.getTarget()).append(" trips\n");
+		StringBuilder text = new StringBuilder(plan.getKit().getName()).append(view.ironman ? " supplies for " : " restock for ")
+			.append(plan.getTarget()).append(" trips\n");
+		if (view.ironman)
+		{
+			for (Plan.Line line : plan.getLines())
+			{
+				if (line.getShort() > 0)
+				{
+					int item = line.getBuyItem() >= 0 ? line.getBuyItem() : line.getSupply().getIcon();
+					Integer per = line.getSupply().getUnits().get(item);
+					long count = per == null ? line.getShort() : (line.getShort() + per - 1) / per;
+					text.append(view.name(item)).append(" x ").append(count).append('\n');
+				}
+			}
+			Toolkit.getDefaultToolkit().getSystemClipboard().setContents(new StringSelection(text.toString().trim()), null);
+			return;
+		}
 		for (Plan.Buy buy : plan.shopping())
 		{
 			text.append(view.name(buy.getItemId())).append(" x ").append(buy.getQuantity()).append('\n');
@@ -365,7 +477,7 @@ public class QuartermasterPanel extends PluginPanel
 		save.accent(Theme.TEAL);
 		save.add(Ui.label("Pack it, then save it", Theme.body(), Theme.GOLD), BorderLayout.NORTH);
 		save.add(Ui.wrapped("Withdraw what you take on a trip and save it as a kit. The Quartermaster then recognises it whenever you pack it, and learns what you really use.",
-			Theme.small(), Theme.TEXT_MUTED, WIDTH - 30), BorderLayout.CENTER);
+			Theme.small(), Theme.TEXT_MUTED, WIDTH - 12), BorderLayout.CENTER);
 		JPanel buttons = new JPanel(new FlowLayout(FlowLayout.LEFT, 0, 0));
 		buttons.setOpaque(false);
 		buttons.add(new CodexButton("Save my inventory as a kit", true, actions::capture));
@@ -404,7 +516,7 @@ public class QuartermasterPanel extends PluginPanel
 		Card card = new Card(new BorderLayout(0, 4));
 		card.accent(Theme.GOLD_DIM);
 		card.add(Ui.label(title, Theme.body(), Theme.GOLD), BorderLayout.NORTH);
-		card.add(Ui.wrapped(text, Theme.small(), Theme.TEXT_MUTED, WIDTH - 30), BorderLayout.CENTER);
+		card.add(Ui.wrapped(text, Theme.small(), Theme.TEXT_MUTED, WIDTH - 12), BorderLayout.CENTER);
 		return card;
 	}
 
