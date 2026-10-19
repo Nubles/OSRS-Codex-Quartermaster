@@ -26,6 +26,8 @@ class SupplyRow extends JComponent
 	private final int warn;
 	private final boolean first;
 	private final ItemIcons icons;
+	/** Handed over each time an icon is asked for, so a row waiting on a picture is told once. */
+	private final Runnable repaint = this::repaint;
 
 	SupplyRow(Plan.Line line, View view, int target, boolean first, ItemIcons icons, boolean editable)
 	{
@@ -75,7 +77,7 @@ class SupplyRow extends JComponent
 		int w = getWidth();
 		boolean kept = line.isKept();
 		Color color = kept ? Theme.TEXT_MUTED : Theme.trips(line.getTrips(), warn);
-		Well.paint(g, 0, 4, icons == null ? null : icons.icon(icon(), this::repaint), first ? Theme.alpha(color, 200) : null);
+		Well.paint(g, 0, 4, icons == null ? null : icons.icon(icon(), repaint), first ? Theme.alpha(color, 200) : null);
 
 		int tx = Well.SIZE + 12;
 		g.setFont(Theme.title());

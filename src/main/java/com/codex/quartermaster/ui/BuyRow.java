@@ -16,6 +16,8 @@ class BuyRow extends JComponent
 	private final String amount;
 	private final Color color;
 	private final ItemIcons icons;
+	/** Handed over each time an icon is asked for, so a row waiting on a picture is told once. */
+	private final Runnable repaint = this::repaint;
 
 	BuyRow(int itemId, String name, String note, String amount, Color color, ItemIcons icons)
 	{
@@ -36,7 +38,7 @@ class BuyRow extends JComponent
 		Graphics2D g = (Graphics2D) graphics.create();
 		Theme.smooth(g);
 		int w = getWidth();
-		Well.paint(g, 0, 2, icons == null || itemId < 0 ? null : icons.icon(itemId, this::repaint), null);
+		Well.paint(g, 0, 2, icons == null || itemId < 0 ? null : icons.icon(itemId, repaint), null);
 		int tx = Well.SIZE + 12;
 		g.setFont(Theme.body());
 		FontMetrics fm = g.getFontMetrics();
