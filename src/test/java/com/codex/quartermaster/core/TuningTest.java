@@ -68,6 +68,21 @@ public class TuningTest
 	}
 
 	@Test
+	public void theOneTeleportUsedToLeaveIsNotRunningOut()
+	{
+		// One house tablet a trip, broken to leave every time: using the only one is the plan, not
+		// a shortage. Advising two would flip back to one as soon as trips used one of two.
+		String tab = Supply.itemKey(ItemID.POH_TABLET_TELEPORTTOHOUSE);
+		Kit kit = Fixtures.kit("FOOD", 280, tab, 1);
+		Usage u = new Usage();
+		for (int i = 0; i < 9; i++)
+		{
+			u.record(kit, new Trip(0, 600_000, used("FOOD", 270, tab, 1), used("FOOD", 280, tab, 1), 0));
+		}
+		assertTrue(Tuning.of(kit, u, items(ItemID.SHARK, 14, ItemID.POH_TABLET_TELEPORTTOHOUSE, 1)).isEmpty());
+	}
+
+	@Test
 	public void boltsAndSingleItemsFreeNoSlots()
 	{
 		Supply bolts = Supplies.get("DRAGON_BOLTS");

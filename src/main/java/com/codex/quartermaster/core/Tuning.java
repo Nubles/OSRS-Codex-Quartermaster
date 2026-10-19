@@ -14,7 +14,8 @@ import java.util.Map;
  * <p>For each supply the kit uses up, the amount suggested is what the ninth trip in ten used
  * (the 90th percentile of the recent trips), rounded up to whole items of what the player
  * carries. When two trips in ten or more used everything packed, the supply ran out and the
- * advice is to take one more item instead. Tools that come back, and supplies measured on too
+ * advice is to take one more item instead; using up a lone single item, such as the one
+ * teleport tablet taken to leave, is not running out. Tools that come back, and supplies measured on too
  * few trips, get no advice.</p>
  */
 public final class Tuning
@@ -154,7 +155,10 @@ public final class Tuning
 				}
 				used.add(u);
 				long took = t.took(s.getKey(), need.getPerTrip());
-				if (took > 0 && u >= took)
+				// Using the one item of its kind taken, such as the tablet broken to leave, is the
+				// plan rather than a shortage.
+				boolean onlyOne = s.isItem() && took <= 1;
+				if (took > 0 && u >= took && !onlyOne)
 				{
 					ranOut++;
 				}
