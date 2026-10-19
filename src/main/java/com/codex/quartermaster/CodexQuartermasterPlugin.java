@@ -220,6 +220,9 @@ public class CodexQuartermasterPlugin extends Plugin
 		tagManager.registerTag(BankView.TAG, id -> packView.contains(itemManager.canonicalize(id)));
 		clientThread.invokeLater(() ->
 		{
+			// A client that quit without warning can leave Bank Tags set to open the packing view on
+			// the next visit, before the Quartermaster has worked it out: the bank would open empty.
+			closeView();
 			loadProfile();
 			if (client.getGameState() == GameState.LOGGED_IN)
 			{
@@ -459,7 +462,7 @@ public class CodexQuartermasterPlugin extends Plugin
 	private void closeView()
 	{
 		String remembered = configManager.getConfiguration(BankTagsPlugin.CONFIG_GROUP, BankView.REMEMBERED_TAB_KEY);
-		if (BankView.TAG.equals(bankTags.getActiveTag()) || BankView.TAG.equals(remembered))
+		if (BankView.shouldClose(bankTags.getActiveTag(), remembered))
 		{
 			bankTags.closeBankTag();
 		}

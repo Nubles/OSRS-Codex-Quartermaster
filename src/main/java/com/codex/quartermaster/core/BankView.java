@@ -58,6 +58,20 @@ public final class BankView
 		return ids.isEmpty() ? EMPTY : new BankView(ids);
 	}
 
+	/**
+	 * Whether the bank's filtered view should be closed: the Quartermaster's is open now, or Bank
+	 * Tags remembers it to open on the next visit. Bank Tags forgets the open view as the bank
+	 * closes but keeps its name for the next visit, and a client that quit without warning keeps
+	 * it across a restart, so both are checked.
+	 *
+	 * @param active the tag open in the bank now, or null
+	 * @param remembered the tag Bank Tags will open on the next visit, or null or empty
+	 */
+	public static boolean shouldClose(String active, String remembered)
+	{
+		return TAG.equals(active) || TAG.equals(remembered);
+	}
+
 	/** @param itemId a bank item's id, noted and placeholder forms folded in */
 	public boolean contains(int itemId)
 	{
