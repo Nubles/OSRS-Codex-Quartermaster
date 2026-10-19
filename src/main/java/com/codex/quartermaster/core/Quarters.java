@@ -191,6 +191,28 @@ public class Quarters
 		return all;
 	}
 
+	/**
+	 * The kits worth restocking together: every saved kit, and the chosen preset if one is chosen,
+	 * since that is the player's too.
+	 */
+	public List<Kit> restockKits()
+	{
+		List<Kit> out = new ArrayList<>(kits);
+		String chosen = chosenKitId();
+		Kit k = chosen == null ? null : kit(chosen);
+		if (k != null && k.isPreset())
+		{
+			out.add(k);
+		}
+		return out;
+	}
+
+	/** One shopping list for {@link #restockKits()}, each stocked for the restock target. */
+	public Plan planAll(Map<Integer, Long> carried, Prices prices, boolean measured)
+	{
+		return Planner.planAll(restockKits(), usage, held(carried), stored, prices, target, measured);
+	}
+
 	public Plan plan(Kit kit, Map<Integer, Long> carried, Prices prices, boolean measured)
 	{
 		return Planner.plan(kit, usage.get(kit.getId()), held(carried), stored, prices, target, measured);
@@ -252,6 +274,29 @@ public class Quarters
 			}
 		}
 		return removed;
+	}
+
+	/**
+	 * Sets how much of each supply a saved kit takes, as {@link Tuning} advises. What was measured
+	 * stays: it is what trips used, whatever was packed.
+	 *
+	 * @return whether the kit changed
+	 */
+	public boolean tune(String kitId, List<Tuning.Advice> advice)
+	{
+		for (Kit k : kits)
+		{
+			if (k.getId().equals(kitId))
+			{
+				boolean changed = false;
+				for (Tuning.Advice a : advice)
+				{
+					changed |= k.setPerTrip(a.getSupply().getKey(), a.getSuggested());
+				}
+				return changed;
+			}
+		}
+		return false;
 	}
 
 	/** Drops a supply from a saved kit, such as a tool that was carried but is not used up. */
@@ -401,6 +446,7 @@ public class Quarters
 			return null;
 		}
 		Map<String, Long> used = new LinkedHashMap<>();
+		Map<String, Long> took = new LinkedHashMap<>();
 		long total = 0;
 		long cost = 0;
 		for (Need n : kit.getNeeds())
@@ -412,6 +458,7 @@ public class Quarters
 			}
 			long u = Math.max(0, s.count(start) - s.count(carried));
 			used.put(s.getKey(), u);
+			took.put(s.getKey(), s.count(start));
 			total += u;
 			cost += Planner.cost(s, u, start, prices);
 		}
@@ -419,7 +466,7 @@ public class Quarters
 		{
 			return null;
 		}
-		Trip trip = new Trip(began, now, used, cost);
+		Trip trip = new Trip(began, now, used, took, cost);
 		usage.computeIfAbsent(kit.getId(), k -> new Usage()).record(kit, trip);
 		return trip;
 	}

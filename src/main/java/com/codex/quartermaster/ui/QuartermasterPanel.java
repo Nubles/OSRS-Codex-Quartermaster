@@ -2,9 +2,11 @@ package com.codex.quartermaster.ui;
 
 import com.codex.quartermaster.core.Packing;
 import com.codex.quartermaster.core.Plan;
+import com.codex.quartermaster.core.Planner;
 import com.codex.quartermaster.core.Supplies;
 import com.codex.quartermaster.core.Supply;
 import com.codex.quartermaster.core.Trip;
+import com.codex.quartermaster.core.Tuning;
 import com.codex.quartermaster.core.Usage;
 import java.awt.BorderLayout;
 import java.awt.CardLayout;
@@ -64,6 +66,8 @@ public class QuartermasterPanel extends PluginPanel
 	private final Crest crest = new Crest();
 	private final Segmented tabs = new Segmented(true, "Supplies", "Restock", "Kits");
 	private final Segmented target = new Segmented(false, "5", "10", "25", "50", "100");
+	/** Restock the chosen kit, or every saved kit at once. */
+	private final Segmented scope = new Segmented(false, "This kit", "All kits");
 	private final CardLayout cards = new CardLayout();
 	private final JPanel content = new JPanel(cards);
 	private final JScrollPane supplies = scroller();
@@ -101,6 +105,11 @@ public class QuartermasterPanel extends PluginPanel
 		tabs.onChange(this::showTab);
 		target.setSelected(1, false);
 		target.onChange(i -> actions.target(TARGETS[i]));
+		scope.onChange(i ->
+		{
+			stale[1] = true;
+			refresh(false);
+		});
 		refresh(true);
 	}
 
@@ -284,6 +293,10 @@ public class QuartermasterPanel extends PluginPanel
 			? "* measured from your own " + view.measured + " trips"
 			: plan.getKit().isPreset() ? "Typical amounts until your own trips are measured" : "As packed until your own trips are measured";
 		stack.add(Ui.wrapped(foot, Theme.small(), Theme.TEXT_FAINT, WIDTH));
+		if (!view.tuning.isEmpty())
+		{
+			addTuning(stack, plan);
+		}
 
 		if (!view.trips.isEmpty())
 		{
@@ -318,6 +331,42 @@ public class QuartermasterPanel extends PluginPanel
 			}
 		}
 		replace(supplies, stack);
+	}
+
+	/** What the kit's own trips say to pack instead, with a button to pack that from now on. */
+	private void addTuning(StackPanel stack, Plan plan)
+	{
+		int slots = Tuning.slotsFreed(view.tuning);
+		stack.add(new SectionHeader("Pack to your trips", slots > 0 ? slots + (slots == 1 ? " slot free" : " slots free") : null));
+		Card card = new Card(new BorderLayout(0, 6));
+		card.accent(Theme.TEAL);
+		StackPanel rows = new StackPanel(2, 0);
+		for (Tuning.Advice a : view.tuning)
+		{
+			int each = a.getUnitsEach();
+			String now = Format.amount((a.getPacked() + each - 1) / each);
+			String then = Format.amount((a.getSuggested() + each - 1) / each);
+			String note = a.isMore()
+				? "ran out " + a.getRanOut() + " of " + a.getTrips()
+				: "most used " + Format.amount((a.getCovers() + each - 1) / each);
+			rows.add(new BuyRow(a.getItem(), view.name(a.getItem()), note, now + " → " + then, a.isMore() ? Theme.EMBER : Theme.TEAL, icons));
+		}
+		card.add(rows, BorderLayout.CENTER);
+		JPanel buttons = new JPanel(new FlowLayout(FlowLayout.LEFT, 0, 0));
+		buttons.setOpaque(false);
+		String kitId = plan.getKit().getId();
+		CodexButton apply = new CodexButton("Pack these amounts", false, null);
+		apply.setAction(() ->
+		{
+			actions.tune(kitId);
+			apply.flash("Kit updated");
+		});
+		buttons.add(apply);
+		card.add(buttons, BorderLayout.SOUTH);
+		stack.add(card);
+		stack.add(Ui.wrapped("From your last " + view.tuning.get(0).getTrips() + " trips with this kit: \"most used\" covers nine trips in ten. "
+				+ "The packing check and trips left follow the new amounts.",
+			Theme.small(), Theme.TEXT_FAINT, WIDTH));
 	}
 
 	/**
@@ -415,7 +464,13 @@ public class QuartermasterPanel extends PluginPanel
 			replace(restock, stack);
 			return;
 		}
-		Plan plan = view.active;
+		boolean all = view.all != null && scope.getSelected() == 1;
+		if (view.all != null)
+		{
+			stack.add(scope);
+		}
+		Plan plan = all ? view.all : view.active;
+		String what = all ? "every kit" : plan.getKit().getName();
 		int trips = plan.trips();
 		List<Plan.Line> missing = new ArrayList<>();
 		for (Plan.Line line : plan.getLines())
@@ -444,13 +499,13 @@ public class QuartermasterPanel extends PluginPanel
 		}
 		String after = view.ironman ? "once gathered" : unbuyable.isEmpty() ? "after buying" : "some not sold";
 		tiles.add(new StatTile(trips == Plan.UNLIMITED ? "-" : Format.trips(trips) + " to " + Math.max(trips, plan.getTarget()),
-			"Trips", after, Theme.trips(Math.min(trips, plan.getTarget()), view.warn)));
+			all ? "Each kit" : "Trips", after, Theme.trips(Math.min(trips, plan.getTarget()), view.warn)));
 		stack.add(tiles);
 
 		if (missing.isEmpty())
 		{
 			stack.add(note("Stocked for " + plan.getTarget() + " trips", "Your bank already holds enough for "
-				+ plan.getTarget() + " trips of " + plan.getKit().getName() + ". Pick a higher target to plan a bigger restock."));
+				+ plan.getTarget() + " trips of " + what + ". Pick a higher target to plan a bigger restock."));
 			replace(restock, stack);
 			return;
 		}
@@ -488,11 +543,26 @@ public class QuartermasterPanel extends PluginPanel
 				stack.add(copyButton(plan));
 			}
 		}
-		stack.add(Ui.wrapped(view.ironman
+		stack.add(Ui.wrapped((all ? "Every kit stocked for " + plan.getTarget() + " trips from the one bank they share: "
+				+ kitNames() + ". " : "") + (view.ironman
 				? "Counted in the potion or food you use most, so a 4-dose potion stands for four doses."
-				: "Each supply is bought as the item you already use most of, at the client's Grand Exchange prices.",
+				: "Each supply is bought as the item you already use most of, at the client's Grand Exchange prices."),
 			Theme.small(), Theme.TEXT_FAINT, WIDTH));
 		replace(restock, stack);
+	}
+
+	/** The kits restocked together, by name. */
+	private String kitNames()
+	{
+		StringBuilder out = new StringBuilder();
+		for (Plan p : view.plans)
+		{
+			if (!p.getKit().isPreset() || p.getKit().getId().equals(view.active.getKit().getId()) && view.chosenPreset)
+			{
+				out.append(out.length() == 0 ? "" : ", ").append(p.getKit().getName());
+			}
+		}
+		return out.toString();
 	}
 
 	/** How many of the usual item make up what a line is short, such as "x103", or "-" when unknown. */
@@ -522,7 +592,8 @@ public class QuartermasterPanel extends PluginPanel
 
 	private void copy(Plan plan)
 	{
-		StringBuilder text = new StringBuilder(plan.getKit().getName()).append(view.ironman ? " supplies for " : " restock for ")
+		boolean all = Planner.ALL_KITS.equals(plan.getKit().getId());
+		StringBuilder text = new StringBuilder(all ? "All kits" : plan.getKit().getName()).append(view.ironman ? " supplies for " : " restock for ")
 			.append(plan.getTarget()).append(" trips\n");
 		if (view.ironman)
 		{

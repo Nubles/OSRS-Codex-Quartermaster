@@ -4,6 +4,7 @@ import com.codex.quartermaster.core.Packing;
 import com.codex.quartermaster.core.Plan;
 import com.codex.quartermaster.core.Supply;
 import com.codex.quartermaster.core.Trip;
+import com.codex.quartermaster.core.Tuning;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
@@ -38,6 +39,12 @@ public final class View
 	long tripMs;
 	/** The Codex plugin whose saved bank is shown, or null when the Quartermaster saw it itself. */
 	String bankFrom;
+	/** One plan restocking every saved kit together, or null with fewer than two. */
+	Plan all;
+	/** The chosen kit is a preset the player picked, so it is restocked with the saved ones. */
+	boolean chosenPreset;
+	/** How the chosen saved kit's amounts should change, from its trips; empty when they are fine. */
+	List<Tuning.Advice> tuning = Collections.emptyList();
 
 	/**
 	 * @param active the chosen kit's plan, or null when no account is open
@@ -64,6 +71,19 @@ public final class View
 	public static View loggedOut()
 	{
 		return new View(State.LOGGED_OUT, null, null, null, null, 0, 0, false, null, 3, System.currentTimeMillis());
+	}
+
+	public View all(Plan plan, boolean presetChosen)
+	{
+		all = plan;
+		chosenPreset = presetChosen;
+		return this;
+	}
+
+	public View tuning(List<Tuning.Advice> advice)
+	{
+		tuning = advice == null ? Collections.emptyList() : advice;
+		return this;
 	}
 
 	public View bankFrom(String plugin)

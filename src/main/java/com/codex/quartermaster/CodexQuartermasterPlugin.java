@@ -6,9 +6,10 @@ import com.codex.quartermaster.core.Packing;
 import com.codex.quartermaster.core.Plan;
 import com.codex.quartermaster.core.Prices;
 import com.codex.quartermaster.core.Quarters;
-import com.codex.quartermaster.core.SharedBank;
 import com.codex.quartermaster.core.Reminder;
+import com.codex.quartermaster.core.SharedBank;
 import com.codex.quartermaster.core.Trip;
+import com.codex.quartermaster.core.Tuning;
 import com.codex.quartermaster.core.Usage;
 import com.codex.quartermaster.core.Warning;
 import com.codex.quartermaster.overlay.SupplyPlaque;
@@ -800,11 +801,26 @@ public class CodexQuartermasterPlugin extends Plugin
 		withdrawOverlay.show(loggedIn && bankOpen && packing != null && config.highlightBank() && packingNow(packing)
 			? packing.withdrawals() : null);
 		List<Trip> trips = usage == null ? Collections.emptyList() : new ArrayList<>(usage.getRecent());
+		// Every saved kit restocked together, when there are several to restock.
+		Plan all = null;
+		if (quarters.restockKits().size() >= 2)
+		{
+			all = quarters.planAll(carried, prices, measured);
+			for (Plan.Line line : all.getLines())
+			{
+				name(line.getSupply().getIcon());
+				line.getBuys().forEach(b -> name(b.getItemId()));
+			}
+		}
+		List<Tuning.Advice> tuning = Tuning.of(active, usage, carried);
+		tuning.forEach(a -> name(a.getItem()));
 		Player player = client.getLocalPlayer();
 		View.State state = !quarters.hasBank() ? View.State.WAITING_FOR_BANK : View.State.READY;
 		View view = new View(state, loggedIn && player != null ? player.getName() : null, chosen, plans, trips,
 			usage == null ? 0 : usage.getTrips(), quarters.getBankSeen(), bankOpen, new HashMap<>(names), config.warnTrips(), now)
 			.bankFrom(quarters.getBankFrom())
+			.all(all, active.isPreset() && active.getId().equals(quarters.chosenKitId()))
+			.tuning(tuning)
 			.ironman(ironman())
 			.packing(packAtBank ? packing : null, usage == null ? 0 : usage.typicalDuration());
 
@@ -951,6 +967,26 @@ public class CodexQuartermasterPlugin extends Plugin
 				unsaved = true;
 				save();
 				publish();
+			});
+		}
+
+		@Override
+		public void tune(String kitId)
+		{
+			clientThread.invokeLater(() ->
+			{
+				if (quarters == null)
+				{
+					return;
+				}
+				Kit kit = quarters.kit(kitId);
+				// Worked out afresh, so the amounts packed are what the panel showed or newer.
+				if (kit != null && quarters.tune(kitId, Tuning.of(kit, quarters.usage(kitId), carried)))
+				{
+					unsaved = true;
+					save();
+					publish();
+				}
 			});
 		}
 

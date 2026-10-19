@@ -14,4 +14,7 @@ public interface Actions
 
 	/** Take a supply out of a saved kit, for something that was carried but is not used up. */
 	void drop(String kitId, String supply);
+
+	/** Pack the amounts the trips advise for a saved kit. */
+	void tune(String kitId);
 }
