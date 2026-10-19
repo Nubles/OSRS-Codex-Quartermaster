@@ -1,11 +1,14 @@
 package com.codex.quartermaster.core;
 
+import com.google.gson.Gson;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.function.IntPredicate;
@@ -24,9 +27,13 @@ public class Quarters
 	/** How much of a saved kit must be packed for it to be recognised. */
 	static final double MATCH = 0.75;
 	public static final int DEFAULT_TARGET = 10;
+	/** The most trips a restock is planned for, the panel's largest choice. */
+	public static final int TARGET_MAX = 100;
 
 	private Map<Integer, Long> bank = new HashMap<>();
 	private long bankSeen;
+	/** The Codex plugin whose saved bank {@link #bank} was taken from, or null when seen here. */
+	private String bankFrom;
 	private List<Kit> kits = new ArrayList<>();
 	private String active;
 	private int target = DEFAULT_TARGET;
@@ -62,6 +69,43 @@ public class Quarters
 	{
 		bank = new HashMap<>(items);
 		bankSeen = now;
+		bankFrom = null;
+	}
+
+	/**
+	 * How much newer another plugin's bank must be before it replaces the one seen here. Both
+	 * plugins see the same bank visit a moment apart; only a visit this plugin missed counts.
+	 */
+	static final long ADOPT_MARGIN_MS = 60_000;
+
+	/**
+	 * Takes the bank another Codex plugin saved, when it holds everything and is clearly newer
+	 * than the bank this plugin last saw: the Quartermaster was off, or new, at that bank visit.
+	 *
+	 * @param from the plugin's name, shown with the bank's age
+	 * @param now the time now, in epoch milliseconds
+	 * @return whether it was taken
+	 */
+	public boolean adoptBank(SharedBank shared, String from, long now)
+	{
+		// A time past now is damage: one saved here no longer stands in the way, and one saved by
+		// the other plugin is not taken, or it would stand in the way of every bank after it.
+		long seen = bankSeen > now + ADOPT_MARGIN_MS ? 0 : bankSeen;
+		if (shared == null || !shared.isComplete() || shared.getSavedAt() <= 0 || shared.getSavedAt() > now + ADOPT_MARGIN_MS
+			|| shared.getSavedAt() <= seen + (seen > 0 ? ADOPT_MARGIN_MS : 0))
+		{
+			return false;
+		}
+		bank = new HashMap<>(shared.getItems());
+		bankSeen = shared.getSavedAt();
+		bankFrom = from;
+		return true;
+	}
+
+	/** The plugin the bank was taken from, or null when the Quartermaster saw it itself. */
+	public String getBankFrom()
+	{
+		return bankFrom;
 	}
 
 	/** The doses in the bank's potion storage, read whenever the bank is open. */
@@ -92,7 +136,7 @@ public class Quarters
 
 	public void setTarget(int target)
 	{
-		this.target = Math.max(1, target);
+		this.target = Math.max(1, Math.min(TARGET_MAX, target));
 	}
 
 	/** The player's own kits in the order they were saved, then the presets. */
@@ -126,6 +170,15 @@ public class Quarters
 		return k != null ? k : allKits().get(0);
 	}
 
+	/**
+	 * The kit the player chose, or null when none is: then the panel shows the first kit, but
+	 * that is only a default, not the player's choice.
+	 */
+	public String chosenKitId()
+	{
+		return active != null && kit(active) != null ? active : null;
+	}
+
 	public void select(String id)
 	{
 		if (kit(id) != null)
@@ -145,6 +198,28 @@ public class Quarters
 		Map<Integer, Long> all = new HashMap<>(bank);
 		carried.forEach((id, q) -> all.merge(id, q, Long::sum));
 		return all;
+	}
+
+	/**
+	 * The kits worth restocking together: every saved kit, and the chosen preset if one is chosen,
+	 * since that is the player's too.
+	 */
+	public List<Kit> restockKits()
+	{
+		List<Kit> out = new ArrayList<>(kits);
+		String chosen = chosenKitId();
+		Kit k = chosen == null ? null : kit(chosen);
+		if (k != null && k.isPreset())
+		{
+			out.add(k);
+		}
+		return out;
+	}
+
+	/** One shopping list for {@link #restockKits()}, each stocked for the restock target. */
+	public Plan planAll(Map<Integer, Long> carried, Prices prices, boolean measured)
+	{
+		return Planner.planAll(restockKits(), usage, held(carried), stored, prices, target, measured);
 	}
 
 	public Plan plan(Kit kit, Map<Integer, Long> carried, Prices prices, boolean measured)
@@ -208,6 +283,141 @@ public class Quarters
 			}
 		}
 		return removed;
+	}
+
+	/**
+	 * Sets how much of each supply a saved kit takes, as {@link Tuning} advises. What was measured
+	 * stays: it is what trips used, whatever was packed.
+	 *
+	 * @return whether the kit changed
+	 */
+	public boolean tune(String kitId, List<Tuning.Advice> advice)
+	{
+		for (Kit k : kits)
+		{
+			if (k.getId().equals(kitId))
+			{
+				boolean changed = false;
+				Usage trips = usage.get(kitId);
+				for (Tuning.Advice a : advice)
+				{
+					String key = a.getSupply().getKey();
+					Need was = k.need(key);
+					if (was != null && trips != null)
+					{
+						// Trips from before trips noted what they set out with stood in with the kit's
+						// amount; keep the amount they really took, so the new one does not make them look dry.
+						for (Trip t : trips.getRecent())
+						{
+							t.tookAtLeast(key, was.getPerTrip());
+						}
+					}
+					changed |= k.setPerTrip(key, a.getSuggested());
+				}
+				return changed;
+			}
+		}
+		return false;
+	}
+
+	/** The longest name a kit keeps. */
+	public static final int NAME_MAX = 32;
+	/** The most a kit can plan to use of one supply a trip. */
+	public static final int AMOUNT_MAX = 100_000;
+
+	/** Words a name is never left ending on when it is cut short. */
+	private static final Set<String> DANGLING = new HashSet<>(Arrays.asList(
+		"a", "an", "and", "at", "but", "by", "for", "from", "in", "of", "on", "or", "that", "the", "to", "vs", "with"));
+
+	/**
+	 * A kit's name as it is kept: trimmed, single-spaced, and no longer than {@link #NAME_MAX}. A
+	 * longer name is cut at the last whole word that fits, an opened bracket the cut leaves
+	 * unclosed is dropped with what follows it, and the name never ends on "and", "with" or a
+	 * comma: "Phantom Muspah (shielded, ranged)" keeps "Phantom Muspah". A single word longer
+	 * than the cap is cut where the cap falls.
+	 */
+	public static String fitName(String name)
+	{
+		String clean = name == null ? "" : name.trim().replaceAll("\\s+", " ");
+		if (clean.length() <= NAME_MAX)
+		{
+			return clean;
+		}
+		String cut = clean.substring(0, NAME_MAX);
+		int space = clean.charAt(NAME_MAX) == ' ' ? NAME_MAX : cut.lastIndexOf(' ');
+		if (space >= NAME_MAX / 2)
+		{
+			cut = cut.substring(0, space);
+		}
+		int open = Math.max(cut.lastIndexOf('('), cut.lastIndexOf('['));
+		if (open > 0 && cut.indexOf(cut.charAt(open) == '(' ? ')' : ']', open) < 0)
+		{
+			cut = cut.substring(0, open);
+		}
+		String was;
+		do
+		{
+			was = cut;
+			cut = cut.replaceAll("[\\s,;:/&+(\\[-]+$", "");
+			int last = cut.lastIndexOf(' ');
+			if (last > 0 && DANGLING.contains(cut.substring(last + 1).toLowerCase(Locale.ENGLISH)))
+			{
+				cut = cut.substring(0, last);
+			}
+		}
+		while (!cut.equals(was) && !cut.isEmpty());
+		return cut.isEmpty() ? clean.substring(0, NAME_MAX).trim() : cut;
+	}
+
+	/**
+	 * Renames a saved kit. Presets keep their names.
+	 *
+	 * @return whether the name changed
+	 */
+	public boolean rename(String kitId, String name)
+	{
+		String clean = fitName(name);
+		for (Kit k : kits)
+		{
+			if (k.getId().equals(kitId) && !clean.isEmpty() && !clean.equals(k.getName()))
+			{
+				k.setName(clean);
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/**
+	 * Sets what a saved kit plans to use of one supply a trip, in the supply's own unit (hitpoints
+	 * for food, doses for potions, items otherwise). Zero marks it as coming back every trip.
+	 * Trips already measured keep what they set out with, as with tuning.
+	 *
+	 * @return whether the amount changed
+	 */
+	public boolean setAmount(String kitId, String supply, int perTrip)
+	{
+		if (perTrip < 0 || perTrip > AMOUNT_MAX)
+		{
+			return false;
+		}
+		for (Kit k : kits)
+		{
+			if (k.getId().equals(kitId))
+			{
+				Need was = k.need(supply);
+				Usage trips = usage.get(kitId);
+				if (was != null && trips != null)
+				{
+					for (Trip t : trips.getRecent())
+					{
+						t.tookAtLeast(supply, was.getPerTrip());
+					}
+				}
+				return k.setAmount(supply, perTrip);
+			}
+		}
+		return false;
 	}
 
 	/** Drops a supply from a saved kit, such as a tool that was carried but is not used up. */
@@ -357,6 +567,7 @@ public class Quarters
 			return null;
 		}
 		Map<String, Long> used = new LinkedHashMap<>();
+		Map<String, Long> took = new LinkedHashMap<>();
 		long total = 0;
 		long cost = 0;
 		for (Need n : kit.getNeeds())
@@ -368,6 +579,7 @@ public class Quarters
 			}
 			long u = Math.max(0, s.count(start) - s.count(carried));
 			used.put(s.getKey(), u);
+			took.put(s.getKey(), s.count(start));
 			total += u;
 			cost += Planner.cost(s, u, start, prices);
 		}
@@ -375,38 +587,92 @@ public class Quarters
 		{
 			return null;
 		}
-		Trip trip = new Trip(began, now, used, cost);
-		usage.computeIfAbsent(kit.getId(), k -> new Usage()).record(kit, trip);
+		Trip trip = new Trip(began, now, used, took, cost).loot(Returns.loot(kit, start, carried, prices));
+		usageOrNew(kit.getId()).record(kit, trip);
 		return trip;
 	}
 
-	/** Restores what saved data can leave out, after it is read back. */
+	/** A kit's trips, made empty if it has none yet. */
+	Usage usageOrNew(String kitId)
+	{
+		return usage.computeIfAbsent(kitId, k -> new Usage());
+	}
+
+	/**
+	 * Reads the quarters saved for an account, or fresh ones when there are none. A damaged save
+	 * keeps all it can: a field or kit that cannot be read is lost alone.
+	 */
+	public static Quarters read(Gson gson, String saved)
+	{
+		Quarters read = Salvage.read(gson, saved, Quarters.class);
+		return read == null ? new Quarters() : read.repair();
+	}
+
+	/** Restores what saved data can leave out, and brings back what damage left out of range. */
 	public Quarters repair()
 	{
-		if (bank == null)
-		{
-			bank = new HashMap<>();
-		}
+		bank = counts(bank);
+		stored = counts(stored);
+		bankSeen = Math.max(0, bankSeen);
 		if (kits == null)
 		{
 			kits = new ArrayList<>();
 		}
 		kits.removeIf(k -> k == null || k.getId() == null || k.getName() == null);
 		kits.forEach(Kit::repair);
+		// New kits are numbered on from the count; one saved behind its kits would reuse their ids.
+		for (Kit k : kits)
+		{
+			if (k.getId().startsWith("kit:"))
+			{
+				try
+				{
+					saved = Math.max(saved, Integer.parseInt(k.getId().substring(4)));
+				}
+				catch (NumberFormatException e)
+				{
+					// Not one this numbered; it cannot clash.
+				}
+			}
+		}
+		saved = Math.max(0, saved);
+		Set<String> ids = new HashSet<>();
+		Presets.all().forEach(p -> ids.add(p.getId()));
+		for (Kit k : kits)
+		{
+			if (!ids.add(k.getId()))
+			{
+				k.setId("kit:" + (++saved));
+				ids.add(k.getId());
+			}
+		}
 		if (usage == null)
 		{
 			usage = new HashMap<>();
 		}
-		usage.values().removeIf(u -> u == null);
+		usage.entrySet().removeIf(e -> e.getKey() == null || e.getValue() == null);
 		usage.values().forEach(Usage::repair);
-		if (stored == null)
-		{
-			stored = new HashMap<>();
-		}
-		if (target < 1)
-		{
-			target = DEFAULT_TARGET;
-		}
+		target = target < 1 ? DEFAULT_TARGET : Math.min(target, TARGET_MAX);
 		return this;
+	}
+
+	/**
+	 * A copy of saved counts with only real items held at least once, none past the most one bank
+	 * slot holds.
+	 */
+	private static Map<Integer, Long> counts(Map<Integer, Long> saved)
+	{
+		Map<Integer, Long> out = new HashMap<>();
+		if (saved != null)
+		{
+			saved.forEach((id, q) ->
+			{
+				if (id != null && id > 0 && q != null && q > 0)
+				{
+					out.put(id, Math.min(q, Integer.MAX_VALUE));
+				}
+			});
+		}
+		return out;
 	}
 }

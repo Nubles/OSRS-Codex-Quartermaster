@@ -1,7 +1,11 @@
 package com.codex.quartermaster.ui;
 
+import com.codex.quartermaster.core.Packing;
 import com.codex.quartermaster.core.Plan;
+import com.codex.quartermaster.core.Returns;
+import com.codex.quartermaster.core.Supply;
 import com.codex.quartermaster.core.Trip;
+import com.codex.quartermaster.core.Tuning;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
@@ -30,6 +34,24 @@ public final class View
 	final long now;
 	/** An iron account, which gathers its supplies rather than buying them. */
 	boolean ironman;
+	/** The chosen kit against what is carried, while packing at the bank; null otherwise. */
+	Packing packing;
+	/** How long a trip with the chosen kit usually takes, or 0 until measured. */
+	long tripMs;
+	/** The Codex plugin whose saved bank is shown, or null when the Quartermaster saw it itself. */
+	String bankFrom;
+	/** One plan restocking every saved kit together, or null with fewer than two. */
+	Plan all;
+	/** The chosen kit is a preset the player picked, so it is restocked with the saved ones. */
+	boolean chosenPreset;
+	/** How the chosen saved kit's amounts should change, from its trips; empty when they are fine. */
+	List<Tuning.Advice> tuning = Collections.emptyList();
+	/** What each kit's trips bring back, by kit id; a kit with no trips is absent. */
+	Map<String, Returns> returns = Collections.emptyMap();
+	/** Whether the kit card names the player; off to share it without the name. */
+	boolean nameOnCard = true;
+	/** The Grand Exchange's four-hour buy limit of each item on the shopping lists; absent when unknown. */
+	Map<Integer, Integer> limits = Collections.emptyMap();
 
 	/**
 	 * @param active the chosen kit's plan, or null when no account is open
@@ -58,9 +80,66 @@ public final class View
 		return new View(State.LOGGED_OUT, null, null, null, null, 0, 0, false, null, 3, System.currentTimeMillis());
 	}
 
+	public View all(Plan plan, boolean presetChosen)
+	{
+		all = plan;
+		chosenPreset = presetChosen;
+		return this;
+	}
+
+	public View tuning(List<Tuning.Advice> advice)
+	{
+		tuning = advice == null ? Collections.emptyList() : advice;
+		return this;
+	}
+
+	public View bankFrom(String plugin)
+	{
+		bankFrom = plugin;
+		return this;
+	}
+
+	/** @param returns what each kit's trips bring back, by kit id */
+	public View returns(Map<String, Returns> returns)
+	{
+		this.returns = returns == null ? Collections.emptyMap() : returns;
+		return this;
+	}
+
+	/** @param limits each shopping item's Grand Exchange buy limit, by item id */
+	public View limits(Map<Integer, Integer> limits)
+	{
+		this.limits = limits == null ? Collections.emptyMap() : limits;
+		return this;
+	}
+
+	/** An item's buy limit every four hours, or 0 when it is not known. */
+	int limit(int itemId)
+	{
+		Integer l = limits.get(itemId);
+		return l == null ? 0 : l;
+	}
+
+	public View nameOnCard(boolean value)
+	{
+		nameOnCard = value;
+		return this;
+	}
+
 	public View ironman(boolean value)
 	{
 		ironman = value;
+		return this;
+	}
+
+	/**
+	 * @param packing the packing check to show at the bank, or null
+	 * @param tripMs a typical trip's length, or 0
+	 */
+	public View packing(Packing packing, long tripMs)
+	{
+		this.packing = packing;
+		this.tripMs = tripMs;
 		return this;
 	}
 
@@ -77,10 +156,21 @@ public final class View
 		return n != null ? n : name(line.getSupply().getIcon());
 	}
 
+	/** A supply's name: its own for pooled supplies, the item's for single items. */
+	String name(Supply supply)
+	{
+		return supply.getName() != null ? supply.getName() : name(supply.getIcon());
+	}
+
 	/** "doses", "hp", or nothing for single items. */
 	static String unit(Plan.Line line)
 	{
-		String u = line.getSupply().getUnit();
+		return unit(line.getSupply());
+	}
+
+	static String unit(Supply supply)
+	{
+		String u = supply.getUnit();
 		return u == null ? "" : " " + u;
 	}
 }

@@ -18,33 +18,31 @@ public final class Format
 	{
 	}
 
-	/** "8,240", "41.2k", "412k", "1.24M". */
+	/**
+	 * The suite's one rule for amounts, so figures side by side on a card read alike: in full below
+	 * 10,000 ("8,240"), whole thousands below a million ("41k", "412k"), millions to one decimal
+	 * ("1.2M", "26.0M", "812.4M") and billions to two ("2.10B"). A zero after the point is kept, so
+	 * "26.0M" sits beside "98.7M" rather than "26M". A figure that rounds up into the next unit is
+	 * written in it ("1.0M", not "1000k").
+	 */
 	public static String amount(long n)
 	{
 		if (n < 10_000)
 		{
 			return String.format(Locale.ENGLISH, "%,d", n);
 		}
-		if (n < 100_000)
-		{
-			return trim(n / 1_000.0, 1) + "k";
-		}
-		if (n < 1_000_000)
+		if (n < 999_500)
 		{
 			return Math.round(n / 1_000.0) + "k";
 		}
-		if (n < 10_000_000)
+		if (n < 999_950_000)
 		{
-			return trim(n / 1_000_000.0, 2) + "M";
+			return String.format(Locale.ENGLISH, "%.1fM", n / 1_000_000.0);
 		}
-		if (n < 1_000_000_000)
-		{
-			return trim(n / 1_000_000.0, 1) + "M";
-		}
-		return trim(n / 1_000_000_000.0, 2) + "B";
+		return String.format(Locale.ENGLISH, "%.2fB", n / 1_000_000_000.0);
 	}
 
-	/** Coins in the short form, negative amounts with a minus: "812.4M", "-45.2k". */
+	/** Coins in the short form, negative amounts with a minus: "812.4M", "-45k". */
 	public static String coins(long gp)
 	{
 		return gp < 0 ? "-" + amount(-gp) : amount(gp);
@@ -134,6 +132,17 @@ public final class Format
 			return minutes + "m";
 		}
 		return minutes / 60 + "h " + minutes % 60 + "m";
+	}
+
+	/** A long stretch of play: "6h 40m" up to two days, then "3d 4h". */
+	public static String span(long ms)
+	{
+		long hours = ms / 3_600_000;
+		if (hours < 48)
+		{
+			return duration(ms);
+		}
+		return hours / 24 + "d " + hours % 24 + "h";
 	}
 
 	/** "14:02" in the player's own time. */

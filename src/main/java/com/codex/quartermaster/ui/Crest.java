@@ -134,17 +134,30 @@ public class Crest extends JComponent
 		g.setColor(Theme.TEXT_MUTED);
 		g.drawString(Ui.clip(heading, small, room), tx, 22);
 
-		String figure = !known ? "-" : unlimited ? "Ample" : String.valueOf(Math.round(count.get()));
 		int top = 27;
-		int figureW = paintLarge(g, figure, tx, top, known ? figureTint : Theme.GOLD_DIM);
-		if (known && !unlimited)
+		if (!known)
+		{
+			// Nothing counted yet: the status takes the figure's place rather than a lone dash.
+			g.setFont(Theme.body());
+			FontMetrics body = g.getFontMetrics();
+			Ui.shadowed(g, Ui.clip(status, body, room), tx, top + 18, statusColor);
+			g.setFont(Theme.small());
+			g.setColor(Theme.TEXT_FAINT);
+			g.drawString(Ui.clip("Trips your bank supports", small, room), tx, top + 34);
+			rule(g, w, h);
+			g.dispose();
+			return;
+		}
+		String figure = unlimited ? "Ample" : String.valueOf(Math.round(count.get()));
+		int figureW = paintLarge(g, figure, tx, top, figureTint);
+		if (!unlimited)
 		{
 			g.setFont(Theme.small());
 			g.setColor(Theme.GOLD_DIM);
 			g.drawString(Math.round(count.get()) == 1 ? "trip" : "trips", tx + figureW + 3, top + 18);
 		}
 		int cy = top + 54;
-		if (stocked >= 0 && known)
+		if (stocked >= 0)
 		{
 			// A slim gauge of the trips held against the restock target, with its tick at the end.
 			int gy = top + 32;
@@ -171,7 +184,13 @@ public class Crest extends JComponent
 			Ui.shadowed(g, Ui.clip(line, small, room), tx, cy, statusColor);
 		}
 
-		// The gilt rule under the crest, with a diamond at its middle.
+		rule(g, w, h);
+		g.dispose();
+	}
+
+	/** The gilt rule under the crest, with a diamond at its middle. */
+	private static void rule(Graphics2D g, int w, int h)
+	{
 		int y = h - 2;
 		g.setPaint(new GradientPaint(0, 0, Theme.alpha(Theme.GOLD, 0), w / 2f, 0, Theme.alpha(Theme.GOLD, 150), true));
 		g.drawLine(0, y, w, y);
@@ -183,6 +202,5 @@ public class Crest extends JComponent
 		diamond.closePath();
 		g.setColor(Theme.GOLD);
 		g.fill(diamond);
-		g.dispose();
 	}
 }

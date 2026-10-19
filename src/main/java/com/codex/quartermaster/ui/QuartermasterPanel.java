@@ -1,9 +1,16 @@
 package com.codex.quartermaster.ui;
 
+import com.codex.quartermaster.core.BuyLimits;
+import com.codex.quartermaster.core.Loadout;
+import com.codex.quartermaster.core.Packing;
+import com.codex.quartermaster.core.Need;
 import com.codex.quartermaster.core.Plan;
+import com.codex.quartermaster.core.Returns;
+import com.codex.quartermaster.core.Planner;
 import com.codex.quartermaster.core.Supplies;
 import com.codex.quartermaster.core.Supply;
 import com.codex.quartermaster.core.Trip;
+import com.codex.quartermaster.core.Tuning;
 import com.codex.quartermaster.core.Usage;
 import java.awt.BorderLayout;
 import java.awt.CardLayout;
@@ -16,6 +23,7 @@ import java.awt.Toolkit;
 import java.awt.datatransfer.StringSelection;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -26,6 +34,7 @@ import javax.swing.JPopupMenu;
 import javax.swing.JScrollPane;
 import javax.swing.ScrollPaneConstants;
 import javax.swing.SwingUtilities;
+import javax.swing.Timer;
 import javax.swing.border.EmptyBorder;
 import net.runelite.client.ui.PluginPanel;
 
@@ -40,6 +49,8 @@ public class QuartermasterPanel extends PluginPanel
 	private static final String[] TABS = {"supplies", "restock", "kits"};
 	private static final int[] TARGETS = {5, 10, 25, 50, 100};
 	private static final int RECENT = 5;
+	/** The presets are unfolded on the Kits page. */
+	private boolean presetsOpen;
 	private static final Map<String, String> SHORT = new HashMap<>();
 
 	static
@@ -62,6 +73,8 @@ public class QuartermasterPanel extends PluginPanel
 	private final Crest crest = new Crest();
 	private final Segmented tabs = new Segmented(true, "Supplies", "Restock", "Kits");
 	private final Segmented target = new Segmented(false, "5", "10", "25", "50", "100");
+	/** Restock the chosen kit, or every saved kit at once. */
+	private final Segmented scope = new Segmented(false, "This kit", "All kits");
 	private final CardLayout cards = new CardLayout();
 	private final JPanel content = new JPanel(cards);
 	private final JScrollPane supplies = scroller();
@@ -99,6 +112,11 @@ public class QuartermasterPanel extends PluginPanel
 		tabs.onChange(this::showTab);
 		target.setSelected(1, false);
 		target.onChange(i -> actions.target(TARGETS[i]));
+		scope.onChange(i ->
+		{
+			stale[1] = true;
+			refresh(false);
+		});
 		refresh(true);
 	}
 
@@ -232,21 +250,49 @@ public class QuartermasterPanel extends PluginPanel
 			return;
 		}
 		Plan plan = view.active;
+		if (view.packing != null)
+		{
+			addPacking(stack, view.packing);
+		}
 		JPanel tiles = new JPanel(new GridLayout(1, 2, 6, 0));
 		tiles.setOpaque(false);
 		tiles.add(new StatTile(Format.coins(plan.tripCost()), "Per trip", view.ironman ? "GE value" : "GE prices", Theme.GOLD));
 		boolean measured = view.measured >= Usage.TRUSTED;
-		tiles.add(new StatTile(measured ? String.valueOf(view.measured) : "-", "Measured",
-			measured ? "trips learned" : view.measured == 1 ? "1 trip so far" : "make a trip", measured ? Theme.TEAL : Theme.TEXT_MUTED));
+		int left = plan.trips();
+		if (measured && view.tripMs > 0 && left != Plan.UNLIMITED && left < 1000)
+		{
+			// How much play the bank holds, at the pace the player really goes.
+			tiles.add(new StatTile(left == 0 ? "-" : Format.span(left * view.tripMs), "Lasts",
+				"at " + Format.duration(view.tripMs) + " a trip", left == 0 ? Theme.TEXT_MUTED : Theme.TEAL));
+		}
+		else
+		{
+			tiles.add(new StatTile(measured ? String.valueOf(view.measured) : "-", "Measured",
+				measured ? "trips learned" : view.measured == 1 ? "1 trip so far" : "make a trip", measured ? Theme.TEAL : Theme.TEXT_MUTED));
+		}
 		stack.add(tiles);
+		Returns returns = Returns.of(view.trips);
+		if (returns.isKnown())
+		{
+			// What the trips bring home against what they burn, at today's prices.
+			JPanel earn = new JPanel(new GridLayout(1, 2, 6, 0));
+			earn.setOpaque(false);
+			long hour = returns.netPerHour();
+			earn.add(new StatTile(Format.coins(returns.lootPerTrip()), "Loot a trip", "net " + Format.signed(returns.netPerTrip()), Theme.GOLD));
+			earn.add(new StatTile(Format.signed(hour), "Net an hour", "after supplies", hour >= 0 ? Theme.GREEN : Theme.EMBER));
+			stack.add(earn);
+		}
 
-		stack.add(new SectionHeader("Supplies", plan.getKit().getName()));
+		// The crest already names the kit; the heading counts what it carries instead.
+		int count = plan.getLines().size();
+		stack.add(new SectionHeader("Supplies", count + (count == 1 ? " supply" : " supplies")));
 		Card list = new Card(new BorderLayout());
 		StackPanel rows = new StackPanel(2, 0);
 		List<Plan.Line> lines = new ArrayList<>(plan.getLines());
 		lines.sort((a, b) -> Integer.compare(a.getTrips(), b.getTrips()));
 		Plan.Line first = plan.limiting();
-		boolean editable = !plan.getKit().isPreset() && plan.getKit().getNeeds().size() > 1;
+		boolean editable = !plan.getKit().isPreset();
+		boolean removable = editable && plan.getKit().getNeeds().size() > 1;
 		for (Plan.Line line : lines)
 		{
 			SupplyRow row = new SupplyRow(line, view, plan.getTarget(), line == first, icons, editable);
@@ -255,9 +301,18 @@ public class QuartermasterPanel extends PluginPanel
 				String kitId = plan.getKit().getId();
 				String key = line.getSupply().getKey();
 				JPopupMenu menu = new JPopupMenu();
-				JMenuItem remove = new JMenuItem("Remove " + view.name(line) + " from this kit");
-				remove.addActionListener(e -> actions.drop(kitId, key));
-				menu.add(remove);
+				Need need = plan.getKit().need(key);
+				String unit = View.unit(line).trim();
+				String label = view.name(line) + (unit.isEmpty() ? "" : " (" + unit + ")");
+				JMenuItem amount = new JMenuItem("Set the amount a trip takes");
+				amount.addActionListener(e -> actions.amount(kitId, key, label, need == null ? 0 : need.getPerTrip()));
+				menu.add(amount);
+				if (removable)
+				{
+					JMenuItem remove = new JMenuItem("Remove " + view.name(line) + " from this kit");
+					remove.addActionListener(e -> actions.drop(kitId, key));
+					menu.add(remove);
+				}
 				row.setComponentPopupMenu(menu);
 			}
 			rows.add(row);
@@ -265,18 +320,21 @@ public class QuartermasterPanel extends PluginPanel
 		list.add(rows, BorderLayout.CENTER);
 		stack.add(list);
 		String foot = measured
-			? "* measured from your own trips"
+			? "* measured from your own " + view.measured + " trips"
 			: plan.getKit().isPreset() ? "Typical amounts until your own trips are measured" : "As packed until your own trips are measured";
 		stack.add(Ui.wrapped(foot, Theme.small(), Theme.TEXT_FAINT, WIDTH));
+		stack.add(cardButton(plan));
+		if (!view.tuning.isEmpty())
+		{
+			addTuning(stack, plan);
+		}
 
 		if (!view.trips.isEmpty())
 		{
-			long sum = 0;
-			for (Trip t : view.trips)
-			{
-				sum += t.getCost();
-			}
-			stack.add(new SectionHeader("Recent trips", "avg " + Format.coins(sum / view.trips.size())));
+			// The tiles above already give a trip's cost and net; the heading says how many trips are listed.
+			int listed = Math.min(RECENT, view.trips.size());
+			stack.add(new SectionHeader("Recent trips", listed < view.measured ? "last " + listed + " of " + view.measured
+				: listed == 1 ? "1 trip" : listed + " trips"));
 			Card recent = new Card(new BorderLayout());
 			StackPanel tripRows = new StackPanel(4, 0);
 			for (int i = view.trips.size() - 1; i >= 0 && i >= view.trips.size() - RECENT; i--)
@@ -289,9 +347,195 @@ public class QuartermasterPanel extends PluginPanel
 		}
 		if (!view.bankOpen && view.bankSeen > 0)
 		{
-			stack.add(Ui.label("Bank as last seen " + Format.ago(view.now - view.bankSeen), Theme.small(), Theme.TEXT_FAINT));
+			String seen = "Bank as last seen " + Format.ago(view.now - view.bankSeen);
+			if (view.bankFrom != null)
+			{
+				// Wrapped: the plugin's name does not fit on one line at sidebar width.
+				stack.add(Ui.wrapped(seen + ", by " + view.bankFrom + ". Open your bank to count potion storage too.",
+					Theme.small(), Theme.TEXT_FAINT, WIDTH));
+			}
+			else
+			{
+				stack.add(Ui.label(seen, Theme.small(), Theme.TEXT_FAINT));
+			}
 		}
 		replace(supplies, stack);
+	}
+
+	/**
+	 * Copies the kit card, the kit as the inventory a trip packs beside what the bank supports,
+	 * as a picture to paste into a chat.
+	 */
+	/** How long a kit card waits for item pictures still on their way before it is drawn anyway. */
+	private static final int PICTURE_WAIT_MS = 3_000;
+
+	private JComponent cardButton(Plan plan)
+	{
+		JPanel buttons = new JPanel(new FlowLayout(FlowLayout.LEFT, 0, 0));
+		buttons.setOpaque(false);
+		CodexButton copy = new CodexButton("Copy kit card", false, null);
+		copy.setToolTipText("Copies a picture of this kit and its numbers, to paste into a chat");
+		String kitId = plan.getKit().getId();
+		copy.setAction(() -> actions.loadout(kitId, loadout ->
+		{
+			// The view may have moved on while the client thread laid the kit out: its figures are
+			// the chosen kit's, so a card is only drawn for the kit still chosen.
+			if (view.active == null || !view.active.getKit().getId().equals(kitId))
+			{
+				copy.flash("Kit changed, try again");
+				return;
+			}
+			List<Integer> pictures = new ArrayList<>();
+			for (Loadout.Slot slot : loadout.getSlots())
+			{
+				pictures.add(slot.getItemId());
+			}
+			// The card waits for every slot's picture, so it never goes out with empty slots; a
+			// picture that never comes holds it up only so long.
+			boolean[] drawn = {false};
+			Runnable draw = () ->
+			{
+				if (drawn[0])
+				{
+					return;
+				}
+				drawn[0] = true;
+				Plan now = view.active;
+				if (now == null || !now.getKit().getId().equals(kitId))
+				{
+					copy.flash("Kit changed, try again");
+					return;
+				}
+				try
+				{
+					Toolkit.getDefaultToolkit().getSystemClipboard()
+						.setContents(KitSheet.transferable(KitSheet.render(now, loadout, view, icons)), null);
+					copy.flash("Copied: paste it anywhere");
+				}
+				catch (IllegalStateException e)
+				{
+					// Another program holds the clipboard.
+					copy.flash("Clipboard busy, try again");
+				}
+			};
+			if (icons == null)
+			{
+				draw.run();
+				return;
+			}
+			Timer late = new Timer(PICTURE_WAIT_MS, e -> draw.run());
+			late.setRepeats(false);
+			late.start();
+			icons.whenLoaded(pictures, () ->
+			{
+				late.stop();
+				draw.run();
+			});
+		}));
+		buttons.add(copy);
+		return buttons;
+	}
+
+	/** What the kit's own trips say to pack instead, with a button to pack that from now on. */
+	private void addTuning(StackPanel stack, Plan plan)
+	{
+		int slots = Tuning.slotsFreed(view.tuning);
+		stack.add(new SectionHeader("Pack to your trips", slots > 0 ? slots + (slots == 1 ? " slot free" : " slots free") : null));
+		Card card = new Card(new BorderLayout(0, 6));
+		card.accent(Theme.TEAL);
+		StackPanel rows = new StackPanel(2, 0);
+		for (Tuning.Advice a : view.tuning)
+		{
+			int each = a.getUnitsEach();
+			String now = Format.amount((a.getPacked() + each - 1) / each);
+			String then = Format.amount((a.getSuggested() + each - 1) / each);
+			String note = a.isMore()
+				? "ran out " + a.getRanOut() + " of " + a.getTrips()
+				: Format.amount(Math.max(0, (a.getPacked() + each - 1) / each - (a.getSuggested() + each - 1) / each)) + " left over";
+			rows.add(new BuyRow(a.getItem(), view.name(a.getItem()), note, now + " → " + then, a.isMore() ? Theme.EMBER : Theme.TEAL, icons));
+		}
+		card.add(rows, BorderLayout.CENTER);
+		JPanel buttons = new JPanel(new FlowLayout(FlowLayout.LEFT, 0, 0));
+		buttons.setOpaque(false);
+		String kitId = plan.getKit().getId();
+		CodexButton apply = new CodexButton("Pack these amounts", false, null);
+		apply.setAction(() ->
+		{
+			actions.tune(kitId);
+			apply.flash("Kit updated");
+		});
+		buttons.add(apply);
+		card.add(buttons, BorderLayout.SOUTH);
+		stack.add(card);
+		stack.add(Ui.wrapped("From your last " + view.tuning.get(0).getTrips() + " trips with this kit: the new amount covers nine trips in ten. "
+				+ "The packing check and trips left follow the new amounts.",
+			Theme.small(), Theme.TEXT_FAINT, WIDTH));
+	}
+
+	/**
+	 * At the bank, the chosen kit against what is carried: what is still to withdraw and how many
+	 * of which bank item, or a quiet line when everything is in.
+	 */
+	private void addPacking(StackPanel stack, Packing packing)
+	{
+		int total = packing.getItems().size();
+		int packed = packing.packedCount();
+		stack.add(new SectionHeader("Packing", packed + " of " + total + " packed"));
+		if (packing.isComplete())
+		{
+			Card done = new Card(new BorderLayout(0, 2));
+			done.accent(Theme.GREEN);
+			done.add(Ui.label("Packed for " + packing.getKit().getName(), Theme.body(), Theme.GREEN), BorderLayout.NORTH);
+			done.add(Ui.wrapped("Everything one trip takes is in your inventory.", Theme.small(), Theme.TEXT_MUTED, WIDTH - 12),
+				BorderLayout.CENTER);
+			stack.add(done);
+			return;
+		}
+		Card card = new Card(new BorderLayout());
+		card.accent(packing.isUnderway() ? Theme.EMBER : Theme.GOLD_DIM);
+		StackPanel rows = new StackPanel(2, 0);
+		for (Packing.Item item : packing.missing())
+		{
+			// The item to take leads, since that is what to look for in the bank.
+			Map.Entry<Integer, Long> take = item.getWithdraw().isEmpty() ? null : item.getWithdraw().entrySet().iterator().next();
+			int icon = take == null ? item.getSupply().getIcon() : take.getKey();
+			String name = take == null ? view.name(item.getSupply()) : view.name(take.getKey());
+			String amount = take == null ? "-" : "x" + Format.amount(take.getValue());
+			rows.add(new BuyRow(icon, name, packNote(item), amount, item.isForgotten() ? Theme.BLOOD : Theme.EMBER, icons));
+		}
+		card.add(rows, BorderLayout.CENTER);
+		if (actions != null && !packing.withdrawals().isEmpty())
+		{
+			JPanel south = new JPanel(new FlowLayout(FlowLayout.LEFT, 0, 0));
+			south.setOpaque(false);
+			south.setBorder(new EmptyBorder(6, 0, 0, 0));
+			CodexButton show = new CodexButton("Show in bank", false, actions::showInBank);
+			show.setToolTipText("Narrows the bank to what is still to take, until you close it");
+			south.add(show);
+			card.add(south, BorderLayout.SOUTH);
+		}
+		stack.add(card);
+	}
+
+	/** What a packing row is short of, and anything else to take for it: "8 doses short", "then 2 Lobster". */
+	private String packNote(Packing.Item item)
+	{
+		if (item.getWithdraw().isEmpty())
+		{
+			return item.getInStorage() > 0 ? Format.amount(item.getInStorage()) + " doses in potion storage" : "none in your bank";
+		}
+		if (item.getWithdraw().size() > 1)
+		{
+			Iterator<Map.Entry<Integer, Long>> it = item.getWithdraw().entrySet().iterator();
+			it.next();
+			Map.Entry<Integer, Long> then = it.next();
+			return "then " + Format.amount(then.getValue()) + " " + view.name(then.getKey());
+		}
+		if (item.isTool())
+		{
+			return item.isForgotten() ? "not packed" : "comes back every trip";
+		}
+		return item.isForgotten() ? "not packed" : Format.amount(item.getMissing()) + View.unit(item.getSupply()) + " short";
 	}
 
 	private String used(Trip trip)
@@ -333,7 +577,13 @@ public class QuartermasterPanel extends PluginPanel
 			replace(restock, stack);
 			return;
 		}
-		Plan plan = view.active;
+		boolean all = view.all != null && scope.getSelected() == 1;
+		if (view.all != null)
+		{
+			stack.add(scope);
+		}
+		Plan plan = all ? view.all : view.active;
+		String what = all ? "every kit" : plan.getKit().getName();
 		int trips = plan.trips();
 		List<Plan.Line> missing = new ArrayList<>();
 		for (Plan.Line line : plan.getLines())
@@ -358,33 +608,35 @@ public class QuartermasterPanel extends PluginPanel
 		else
 		{
 			tiles.add(new StatTile(shopping.isEmpty() ? "Nothing" : Format.coins(plan.restockCost()), "Restock",
-				shopping.isEmpty() ? "already stocked" : shopping.size() + (shopping.size() == 1 ? " item" : " items"), Theme.GOLD));
+				shopping.isEmpty() ? "already stocked" : "at GE prices", Theme.GOLD));
 		}
 		String after = view.ironman ? "once gathered" : unbuyable.isEmpty() ? "after buying" : "some not sold";
 		tiles.add(new StatTile(trips == Plan.UNLIMITED ? "-" : Format.trips(trips) + " to " + Math.max(trips, plan.getTarget()),
-			"Trips", after, Theme.trips(Math.min(trips, plan.getTarget()), view.warn)));
+			all ? "Each kit" : "Trips", after, Theme.trips(Math.min(trips, plan.getTarget()), view.warn)));
 		stack.add(tiles);
 
 		if (missing.isEmpty())
 		{
 			stack.add(note("Stocked for " + plan.getTarget() + " trips", "Your bank already holds enough for "
-				+ plan.getTarget() + " trips of " + plan.getKit().getName() + ". Pick a higher target to plan a bigger restock."));
+				+ plan.getTarget() + " trips of " + what + ". Pick a higher target to plan a bigger restock."));
 			replace(restock, stack);
 			return;
 		}
 		if (!shopping.isEmpty())
 		{
-			stack.add(new SectionHeader("Shopping list", Format.coins(plan.restockCost())));
+			// The bill is the tile's figure; the heading counts the items instead of saying it again.
+			stack.add(new SectionHeader("Shopping list", shopping.size() + (shopping.size() == 1 ? " item" : " items")));
 			Card list = new Card(new BorderLayout());
 			StackPanel rows = new StackPanel(2, 0);
 			for (Plan.Buy buy : shopping)
 			{
 				rows.add(new BuyRow(buy.getItemId(), view.name(buy.getItemId()),
 					String.format(Locale.ENGLISH, "%,d", buy.getQuantity()) + " at " + Format.coins(buy.getPrice()) + " ea",
-					Format.coins(buy.getCost()), Theme.GOLD, icons));
+					Format.coins(buy.getCost()), "gp", Theme.GOLD, icons));
 			}
 			list.add(rows, BorderLayout.CENTER);
 			stack.add(list);
+			addLimits(stack, BuyLimits.of(shopping, view::limit));
 			stack.add(copyButton(plan));
 		}
 		if (!unbuyable.isEmpty())
@@ -406,11 +658,56 @@ public class QuartermasterPanel extends PluginPanel
 				stack.add(copyButton(plan));
 			}
 		}
-		stack.add(Ui.wrapped(view.ironman
+		stack.add(Ui.wrapped((all ? "Every kit stocked for " + plan.getTarget() + " trips from the one bank they share: "
+				+ kitNames() + ". " : "") + (view.ironman
 				? "Counted in the potion or food you use most, so a 4-dose potion stands for four doses."
-				: "Each supply is bought as the item you already use most of, at the client's Grand Exchange prices.",
+				: "Each supply is bought as the item you already use most of, at the client's Grand Exchange prices."),
 			Theme.small(), Theme.TEXT_FAINT, WIDTH));
 		replace(restock, stack);
+	}
+
+	/**
+	 * The items the exchange will not sell in one go: each with its four-hour limit and the rounds
+	 * of buying it needs, and how long the whole list takes, so a 100-trip restock is planned
+	 * across sittings instead of found out at the exchange.
+	 */
+	private void addLimits(StackPanel stack, BuyLimits limits)
+	{
+		if (limits.isEmpty())
+		{
+			return;
+		}
+		long hours = limits.waitMs() / 3_600_000L;
+		// Each row has its rounds; the heading gives the wait they add up to.
+		stack.add(new SectionHeader("Buy limits", hours + "h to buy all"));
+		Card card = new Card(new BorderLayout(0, 4));
+		card.accent(Theme.EMBER);
+		StackPanel rows = new StackPanel(2, 0);
+		for (BuyLimits.Over over : limits.getOver())
+		{
+			rows.add(new BuyRow(over.getItemId(), view.name(over.getItemId()),
+				"limit " + String.format(Locale.ENGLISH, "%,d", over.getLimit()),
+				over.getRounds() + " rounds", Theme.EMBER, icons));
+		}
+		card.add(rows, BorderLayout.CENTER);
+		card.add(Ui.wrapped((limits.getOver().size() == 1 ? "The exchange sells this" : "The exchange sells these")
+			+ " only so many every four hours: buy one round now and the next each time the limit resets.",
+			Theme.small(), Theme.TEXT_FAINT, WIDTH - 24), BorderLayout.SOUTH);
+		stack.add(card);
+	}
+
+	/** The kits restocked together, by name. */
+	private String kitNames()
+	{
+		StringBuilder out = new StringBuilder();
+		for (Plan p : view.plans)
+		{
+			if (!p.getKit().isPreset() || p.getKit().getId().equals(view.active.getKit().getId()) && view.chosenPreset)
+			{
+				out.append(out.length() == 0 ? "" : ", ").append(p.getKit().getName());
+			}
+		}
+		return out.toString();
 	}
 
 	/** How many of the usual item make up what a line is short, such as "x103", or "-" when unknown. */
@@ -440,7 +737,8 @@ public class QuartermasterPanel extends PluginPanel
 
 	private void copy(Plan plan)
 	{
-		StringBuilder text = new StringBuilder(plan.getKit().getName()).append(view.ironman ? " supplies for " : " restock for ")
+		boolean all = Planner.ALL_KITS.equals(plan.getKit().getId());
+		StringBuilder text = new StringBuilder(all ? "All kits" : plan.getKit().getName()).append(view.ironman ? " supplies for " : " restock for ")
 			.append(plan.getTarget()).append(" trips\n");
 		if (view.ironman)
 		{
@@ -459,7 +757,14 @@ public class QuartermasterPanel extends PluginPanel
 		}
 		for (Plan.Buy buy : plan.shopping())
 		{
-			text.append(view.name(buy.getItemId())).append(" x ").append(buy.getQuantity()).append('\n');
+			text.append(view.name(buy.getItemId())).append(" x ").append(buy.getQuantity());
+			int limit = view.limit(buy.getItemId());
+			if (BuyLimits.rounds(buy.getQuantity(), limit) > 1)
+			{
+				text.append(" (limit ").append(limit).append(" per 4h, ")
+					.append(BuyLimits.rounds(buy.getQuantity(), limit)).append(" rounds)");
+			}
+			text.append('\n');
 		}
 		text.append("Total ").append(Format.coins(plan.restockCost())).append(" gp");
 		Toolkit.getDefaultToolkit().getSystemClipboard().setContents(new StringSelection(text.toString()), null);
@@ -506,17 +811,41 @@ public class QuartermasterPanel extends PluginPanel
 				}
 				String id = plan.getKit().getId();
 				boolean chosen = id.equals(view.active.getKit().getId());
-				stack.add(new KitCard(plan, view, chosen, () -> actions.choose(id), chosen ? () -> actions.forget(id) : null));
+				String name = plan.getKit().getName();
+				stack.add(new KitCard(plan, view, chosen, () -> actions.choose(id), chosen ? () -> actions.forget(id) : null,
+					chosen ? () -> actions.rename(id, name) : null));
 			}
 		}
-		stack.add(new SectionHeader("Presets"));
+		int presets = 0;
+		for (Plan plan : view.plans)
+		{
+			presets += plan.getKit().isPreset() ? 1 : 0;
+		}
+		stack.add(new SectionHeader("Presets", String.valueOf(presets)));
+		// With kits of their own, the presets fold away to the one in use, a click from the rest.
+		boolean folded = anySaved && !presetsOpen;
 		for (Plan plan : view.plans)
 		{
 			if (plan.getKit().isPreset())
 			{
 				String id = plan.getKit().getId();
-				stack.add(new KitCard(plan, view, id.equals(view.active.getKit().getId()), () -> actions.choose(id), null));
+				boolean chosen = id.equals(view.active.getKit().getId());
+				if (!folded || chosen)
+				{
+					stack.add(new KitCard(plan, view, chosen, () -> actions.choose(id), null));
+				}
 			}
+		}
+		if (anySaved)
+		{
+			JPanel more = new JPanel(new FlowLayout(FlowLayout.LEFT, 0, 0));
+			more.setOpaque(false);
+			more.add(new CodexButton(folded ? "Show all " + presets + " presets" : "Fold the presets", false, () ->
+			{
+				presetsOpen = !presetsOpen;
+				rebuildKits();
+			}));
+			stack.add(more);
 		}
 		replace(kits, stack);
 	}

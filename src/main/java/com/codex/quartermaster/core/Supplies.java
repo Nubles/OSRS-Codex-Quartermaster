@@ -187,7 +187,9 @@ public final class Supplies
 		{
 			try
 			{
-				return Supply.item(Integer.parseInt(key.substring(5)));
+				int id = Integer.parseInt(key.substring(5));
+				// No item has an id below 1; only a damaged save names one.
+				return id > 0 ? Supply.item(id) : null;
 			}
 			catch (NumberFormatException e)
 			{

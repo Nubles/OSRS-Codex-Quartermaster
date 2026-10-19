@@ -14,15 +14,25 @@ class BuyRow extends JComponent
 	private final String name;
 	private final String note;
 	private final String amount;
+	/** A unit set small after the amount, such as "gp", or null. */
+	private final String unit;
 	private final Color color;
 	private final ItemIcons icons;
+	/** Handed over each time an icon is asked for, so a row waiting on a picture is told once. */
+	private final Runnable repaint = this::repaint;
 
 	BuyRow(int itemId, String name, String note, String amount, Color color, ItemIcons icons)
+	{
+		this(itemId, name, note, amount, null, color, icons);
+	}
+
+	BuyRow(int itemId, String name, String note, String amount, String unit, Color color, ItemIcons icons)
 	{
 		this.itemId = itemId;
 		this.name = name;
 		this.note = note;
 		this.amount = amount;
+		this.unit = unit;
 		this.color = color;
 		this.icons = icons;
 		setOpaque(false);
@@ -36,19 +46,40 @@ class BuyRow extends JComponent
 		Graphics2D g = (Graphics2D) graphics.create();
 		Theme.smooth(g);
 		int w = getWidth();
-		Well.paint(g, 0, 2, icons == null || itemId < 0 ? null : icons.icon(itemId, this::repaint), null);
+		Well.paint(g, 0, 2, icons == null || itemId < 0 ? null : icons.icon(itemId, repaint), null);
 		int tx = Well.SIZE + 12;
 		g.setFont(Theme.body());
 		FontMetrics fm = g.getFontMetrics();
 		int base = 2 + fm.getAscent() + 1;
 		// The name gets the whole line; the quantity and the bill share the line below it.
-		Ui.shadowed(g, Ui.clip(name, fm, w - tx), tx, base, Theme.TEXT);
+		if (fm.stringWidth(name) > w - tx)
+		{
+			// A long name such as "Extended super antifire(4)" steps down to the small font before it is cut.
+			g.setFont(Theme.small());
+			Ui.shadowed(g, Ui.clip(name, g.getFontMetrics(), w - tx), tx, base, Theme.TEXT);
+			g.setFont(Theme.body());
+		}
+		else
+		{
+			Ui.shadowed(g, name, tx, base, Theme.TEXT);
+		}
 		int low = 2 + Well.SIZE - 5;
 		int aw = fm.stringWidth(amount);
-		Ui.shadowed(g, amount, w - aw, low, color);
+		g.setFont(Theme.small());
+		int uw = unit == null ? 0 : g.getFontMetrics().stringWidth(unit) + 3;
+		if (unit != null)
+		{
+			Ui.shadowed(g, unit, w - uw + 3, low, Theme.TEXT_MUTED);
+		}
+		g.setFont(Theme.body());
+		Ui.shadowed(g, amount, w - aw - uw, low, color);
+		aw += uw;
 		g.setFont(Theme.small());
 		g.setColor(Theme.TEXT_MUTED);
-		g.drawString(Ui.clip(note, g.getFontMetrics(), w - tx - aw - 6), tx, low);
+		// A big order's "37,100 at 1,100 ea" gives up its "ea" before it is cut short.
+		int room = w - tx - aw - 6;
+		String shown = g.getFontMetrics().stringWidth(note) > room && note.endsWith(" ea") ? note.substring(0, note.length() - 3) : note;
+		g.drawString(Ui.clip(shown, g.getFontMetrics(), room), tx, low);
 		g.dispose();
 	}
 }

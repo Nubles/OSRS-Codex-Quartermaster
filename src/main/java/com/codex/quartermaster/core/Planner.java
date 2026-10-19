@@ -73,6 +73,40 @@ public final class Planner
 		return new Plan(kit, lines, target);
 	}
 
+	/** The id of the combined plan {@link #planAll} returns. */
+	public static final String ALL_KITS = "all";
+
+	/**
+	 * One plan for several kits at once, against the one bank they share: every supply's use per
+	 * trip is the sum of what each kit uses (measured, when trusted and asked for), so the trips it
+	 * reports are trips of every kit, and the shopping list stocks each kit for {@code target} trips.
+	 *
+	 * @param usage each kit's measurements by kit id
+	 */
+	public static Plan planAll(List<Kit> kits, Map<String, Usage> usage, Map<Integer, Long> held, Map<Integer, Long> stored,
+		Prices prices, int target, boolean measured)
+	{
+		Map<String, Double> perTrip = new LinkedHashMap<>();
+		for (Kit kit : kits)
+		{
+			Usage u = usage.get(kit.getId());
+			boolean useMeasured = measured && u != null && u.isTrusted();
+			for (Need need : kit.getNeeds())
+			{
+				double amount = need.getPerTrip();
+				if (useMeasured && u.perTrip(need.getSupply()) >= 0)
+				{
+					amount = u.perTrip(need.getSupply());
+				}
+				perTrip.merge(need.getSupply(), amount, Double::sum);
+			}
+		}
+		List<Need> needs = new ArrayList<>();
+		// Needs are whole units; a measured total of 7.2 doses a trip is planned as 8.
+		perTrip.forEach((supply, amount) -> needs.add(new Need(supply, (int) Math.min(Integer.MAX_VALUE, Math.ceil(amount - 1e-9)))));
+		return plan(new Kit(ALL_KITS, kits.size() + " kits", needs, false), null, held, stored, prices, target, false);
+	}
+
 	/**
 	 * The item a supply is restocked with: what the player already uses most of, in its full form,
 	 * so a player on anglerfish is not told to buy cake slices because they are cheaper per heal.

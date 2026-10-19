@@ -1,6 +1,7 @@
 package com.codex.quartermaster.core;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -66,6 +67,26 @@ public class Usage
 		return sum / recent.size();
 	}
 
+	/**
+	 * How long a trip usually takes: the median of the last ten measured trips, so one trip left
+	 * idling at the bank does not stretch it. Zero until two trips are measured.
+	 */
+	public long typicalDuration()
+	{
+		if (recent.size() < TRUSTED)
+		{
+			return 0;
+		}
+		List<Long> times = new ArrayList<>();
+		for (int i = Math.max(0, recent.size() - 10); i < recent.size(); i++)
+		{
+			times.add(recent.get(i).duration());
+		}
+		Collections.sort(times);
+		int n = times.size();
+		return n % 2 == 1 ? times.get(n / 2) : (times.get(n / 2 - 1) + times.get(n / 2)) / 2;
+	}
+
 	void record(Kit kit, Trip trip)
 	{
 		trips++;
@@ -103,6 +124,16 @@ public class Usage
 			recent = new ArrayList<>();
 		}
 		recent.removeIf(t -> t == null || t.getUsed() == null);
+		recent.forEach(Trip::repair);
+		while (recent.size() > RECENT)
+		{
+			recent.remove(0);
+		}
+		// An average that is not a number, or below zero, was never a measurement.
+		perTrip.entrySet().removeIf(e -> e.getKey() == null || e.getValue() == null || !(e.getValue() >= 0));
+		perTrip.replaceAll((k, v) -> Math.min(v, Quarters.AMOUNT_MAX));
+		counts.entrySet().removeIf(e -> e.getKey() == null || e.getValue() == null || e.getValue() < 0);
+		trips = Math.max(0, trips);
 		return this;
 	}
 }
