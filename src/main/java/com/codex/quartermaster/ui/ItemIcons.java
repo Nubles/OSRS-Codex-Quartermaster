@@ -6,7 +6,7 @@ import java.awt.image.BufferedImage;
 public interface ItemIcons
 {
 	/**
-	 * @param onLoaded run once if the picture arrives later than this call
+	 * @param onLoaded run once if the picture arrives later than this call; null for none
 	 * @return the picture, possibly still blank, or null
 	 */
 	BufferedImage icon(int itemId, Runnable onLoaded);

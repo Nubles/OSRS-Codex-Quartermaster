@@ -142,9 +142,7 @@ public final class KitSheet
 			Loadout.Slot slot = slots.get(i);
 			int sx = gx + 4 + (i % COLS) * SLOT_W;
 			int sy = bodyY + 4 + (i / COLS) * SLOT_H;
-			BufferedImage icon = icons == null ? null : icons.icon(slot.getItemId(), () ->
-			{
-			});
+			BufferedImage icon = icons == null ? null : icons.icon(slot.getItemId(), null);
 			if (icon != null)
 			{
 				Composite was = g.getComposite();

@@ -20,6 +20,7 @@ import com.codex.quartermaster.overlay.WithdrawOverlay;
 import com.codex.quartermaster.ui.Actions;
 import com.codex.quartermaster.ui.Format;
 import com.codex.quartermaster.ui.ItemIcons;
+import com.codex.quartermaster.ui.LoadingIcons;
 import com.codex.quartermaster.ui.QuartermasterPanel;
 import com.codex.quartermaster.ui.Sigil;
 import com.codex.quartermaster.ui.Theme;
@@ -87,7 +88,6 @@ import net.runelite.client.plugins.banktags.TagManager;
 import net.runelite.client.ui.ClientToolbar;
 import net.runelite.client.ui.NavigationButton;
 import net.runelite.client.ui.overlay.OverlayManager;
-import net.runelite.client.util.AsyncBufferedImage;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -208,12 +208,7 @@ public class CodexQuartermasterPlugin extends Plugin
 	@Override
 	protected void startUp()
 	{
-		ItemIcons icons = (itemId, onLoaded) ->
-		{
-			AsyncBufferedImage image = itemManager.getImage(itemId);
-			image.onLoaded(onLoaded);
-			return image;
-		};
+		ItemIcons icons = new LoadingIcons(itemManager::getImage);
 		panel = new QuartermasterPanel(icons, new PanelActions());
 		navButton = NavigationButton.builder()
 			.tooltip("Codex Quartermaster")
