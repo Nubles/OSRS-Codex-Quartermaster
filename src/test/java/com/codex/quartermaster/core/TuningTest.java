@@ -167,4 +167,19 @@ public class TuningTest
 		// Those trips set out with 14 sharks, not the 8 the kit now takes: none of them ran dry.
 		assertTrue(Tuning.of(q.kit(kit.getId()), u, items(ItemID.SHARK, 8)).isEmpty());
 	}
+
+	@Test
+	public void atTheBankWithAnEmptyPackTheAdviceCountsWhatTheBankHolds()
+	{
+		Kit kit = Fixtures.kit("FOOD", 22 * 14);
+		Usage u = new Usage();
+		for (int i = 0; i < 5; i++)
+		{
+			u.record(kit, new Trip(0, 600_000, used("FOOD", 22 * 6), used("FOOD", 22 * 14), 0));
+		}
+		// Nothing carried, a bank of anglerfish: the advice is in anglerfish, not the supply's own icon.
+		List<Tuning.Advice> advice = Tuning.of(kit, u, items(), items(ItemID.ANGLERFISH, 200));
+		assertEquals(ItemID.ANGLERFISH, advice.get(0).getItem());
+		assertEquals(-8, advice.get(0).itemsChange());
+	}
 }

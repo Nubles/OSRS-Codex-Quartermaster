@@ -812,7 +812,7 @@ public class CodexQuartermasterPlugin extends Plugin
 				line.getBuys().forEach(b -> name(b.getItemId()));
 			}
 		}
-		List<Tuning.Advice> tuning = Tuning.of(active, usage, carried);
+		List<Tuning.Advice> tuning = Tuning.of(active, usage, carried, quarters.getBank());
 		tuning.forEach(a -> name(a.getItem()));
 		Player player = client.getLocalPlayer();
 		View.State state = !quarters.hasBank() ? View.State.WAITING_FOR_BANK : View.State.READY;
@@ -981,7 +981,7 @@ public class CodexQuartermasterPlugin extends Plugin
 				}
 				Kit kit = quarters.kit(kitId);
 				// Worked out afresh, so the amounts packed are what the panel showed or newer.
-				if (kit != null && quarters.tune(kitId, Tuning.of(kit, quarters.usage(kitId), carried)))
+				if (kit != null && quarters.tune(kitId, Tuning.of(kit, quarters.usage(kitId), carried, quarters.getBank())))
 				{
 					unsaved = true;
 					save();

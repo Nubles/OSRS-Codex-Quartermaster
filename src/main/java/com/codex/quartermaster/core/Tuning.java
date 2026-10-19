@@ -119,6 +119,15 @@ public final class Tuning
 	 */
 	public static List<Advice> of(Kit kit, Usage usage, Map<Integer, Long> carried)
 	{
+		return of(kit, usage, carried, Collections.emptyMap());
+	}
+
+	/**
+	 * @param carried what is carried now
+	 * @param stored the bank as last seen, which says what the player uses when nothing is carried
+	 */
+	public static List<Advice> of(Kit kit, Usage usage, Map<Integer, Long> carried, Map<Integer, Long> stored)
+	{
 		if (kit.isPreset() || usage == null)
 		{
 			return Collections.emptyList();
@@ -156,7 +165,8 @@ public final class Tuning
 			}
 			Collections.sort(used);
 			long covers = used.get((int) Math.ceil(used.size() * 0.9) - 1);
-			int item = s.fullForm(itemOf(s, carried));
+			// What is carried says which item the supply comes as; with none carried, what the bank holds.
+			int item = s.fullForm(s.count(carried) > 0 ? itemOf(s, carried) : itemOf(s, stored));
 			int each = Math.max(1, s.getUnits().getOrDefault(item, 1));
 			int packed = need.getPerTrip();
 			int suggested;
