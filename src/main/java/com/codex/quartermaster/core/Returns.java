@@ -6,7 +6,7 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * What trips bring back. A trip's loot is everything carried home that was not carried out, at
+ * What trips bring back. A trip's loot is what is carried home less what was carried out, at
  * today's prices: drops, coins, and the like. Supplies are left out, since a four-dose potion
  * drunk once comes home as a three-dose one, and so are empty vials. Loot kept in a looting bag
  * is not seen, so a trip that fills one reads low.
@@ -31,9 +31,14 @@ public final class Returns
 	}
 
 	/**
+	 * Every item that is not a supply counts both ways: what came home is added and what set out
+	 * and did not come back is taken off. So coins paid at the Grand Exchange or a shop mid-trip
+	 * pay for what they bought, and gear whose id changes as it degrades or loses charges (a
+	 * Barrows piece is priced whole at every stage) nets to nothing.
+	 *
 	 * @param start what the trip set out with
 	 * @param end what came back
-	 * @return the value of what came back that did not set out, in coins
+	 * @return the value of what came back less what set out, supplies aside, in coins
 	 */
 	public static long loot(Kit kit, Map<Integer, Long> start, Map<Integer, Long> end, Prices prices)
 	{
@@ -46,17 +51,18 @@ public final class Returns
 				kitItems.addAll(s.getUnits().keySet());
 			}
 		}
+		Set<Integer> ids = new HashSet<>(start.keySet());
+		ids.addAll(end.keySet());
 		long total = 0;
-		for (Map.Entry<Integer, Long> e : end.entrySet())
+		for (int id : ids)
 		{
-			int id = e.getKey();
-			long gained = e.getValue() - start.getOrDefault(id, 0L);
-			if (gained <= 0 || id == VIAL || kitItems.contains(id) || Supplies.pooled(id))
+			long change = end.getOrDefault(id, 0L) - start.getOrDefault(id, 0L);
+			if (change == 0 || id == VIAL || kitItems.contains(id) || Supplies.pooled(id))
 			{
 				continue;
 			}
 			long each = id == COINS ? 1 : id == PLATINUM ? 1000 : Math.max(0, prices.price(id));
-			total += gained * each;
+			total += change * each;
 		}
 		return total;
 	}

@@ -26,6 +26,16 @@ public class ReturnsTest
 				return 2_500;
 			case ItemID.LAVA_DRAGON_BONES:
 				return 9_000;
+			case ItemID.ABYSSAL_WHIP:
+				return 1_500_000;
+			case ItemID.BARROWS_DHAROK_HEAD:
+			case ItemID.BARROWS_DHAROK_HEAD_100:
+				// RuneLite prices a degraded Barrows piece as the whole piece.
+				return 1_000_000;
+			case ItemID._4DOSESTAMINA:
+				return 12_000;
+			case ItemID._3DOSESTAMINA:
+				return 9_000;
 			default:
 				return 0;
 		}
@@ -43,7 +53,7 @@ public class ReturnsTest
 			ItemID.PLATINUM, 3);
 		assertEquals(4 * 2_500 + 2 * 9_000 + 40_000 + 3_000, Returns.loot(kit, start, end, ReturnsTest::price));
 		// A shark picked up is a supply, not loot.
-		assertEquals(0, Returns.loot(kit, start, items(ItemID.SHARK, 11), ReturnsTest::price));
+		assertEquals(0, Returns.loot(kit, start, items(ItemID.SHARK, 11, ItemID.COINS, 5_000), ReturnsTest::price));
 	}
 
 	@Test
@@ -77,5 +87,29 @@ public class ReturnsTest
 		Returns r = Returns.of(Arrays.asList(old));
 		assertEquals(0, r.getTrips());
 		assertEquals(0, r.netPerHour());
+	}
+
+	@Test
+	public void aGrandExchangeBuyMidTripIsNotLoot()
+	{
+		Quarters q = new Quarters();
+		Map<Integer, Long> start = items(ItemID.SHARK, 10, ItemID.COINS, 2_000_000);
+		Kit kit = q.capture("Slayer", start, id -> ItemID.SHARK == id);
+		// Bought a whip at the Grand Exchange on the way: the coins paid for it.
+		Map<Integer, Long> end = items(ItemID.SHARK, 8, ItemID.COINS, 500_000, ItemID.ABYSSAL_WHIP, 1, ItemID.DRAGON_BONES, 2);
+		assertEquals(2 * 2_500, Returns.loot(kit, start, end, ReturnsTest::price));
+	}
+
+	@Test
+	public void gearThatDegradesOrIsDrunkFromIsNotLoot()
+	{
+		Quarters q = new Quarters();
+		Map<Integer, Long> start = items(ItemID.SHARK, 10, ItemID.BARROWS_DHAROK_HEAD, 1, ItemID._4DOSESTAMINA, 1);
+		Kit kit = q.capture("Barrows", start, id -> ItemID.SHARK == id);
+		// The helm degraded to its 100 form on the first hit, and a stamina dose not in the kit was drunk:
+		// neither is loot, and a potion left out of the kit is still a supply.
+		Map<Integer, Long> end = items(ItemID.SHARK, 9, ItemID.BARROWS_DHAROK_HEAD_100, 1, ItemID._3DOSESTAMINA, 1,
+			ItemID.DRAGON_BONES, 1);
+		assertEquals(2_500, Returns.loot(kit, start, end, ReturnsTest::price));
 	}
 }
