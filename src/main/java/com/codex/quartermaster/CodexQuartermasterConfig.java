@@ -62,4 +62,26 @@ public interface CodexQuartermasterConfig extends Config
 	{
 		return true;
 	}
+
+	@ConfigItem(
+		keyName = "packCheck",
+		name = "Packing check",
+		description = "At the bank, list what the chosen kit still needs withdrawn, and when you leave with most of it packed but something forgotten, say so in the chat box",
+		position = 4
+	)
+	default boolean packCheck()
+	{
+		return true;
+	}
+
+	@ConfigItem(
+		keyName = "highlightBank",
+		name = "Highlight what to withdraw",
+		description = "Outline the bank items the chosen kit still needs, with how many to take",
+		position = 5
+	)
+	default boolean highlightBank()
+	{
+		return true;
+	}
 }

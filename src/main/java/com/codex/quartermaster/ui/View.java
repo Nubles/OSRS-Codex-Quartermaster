@@ -1,6 +1,8 @@
 package com.codex.quartermaster.ui;
 
+import com.codex.quartermaster.core.Packing;
 import com.codex.quartermaster.core.Plan;
+import com.codex.quartermaster.core.Supply;
 import com.codex.quartermaster.core.Trip;
 import java.util.Collections;
 import java.util.List;
@@ -30,6 +32,10 @@ public final class View
 	final long now;
 	/** An iron account, which gathers its supplies rather than buying them. */
 	boolean ironman;
+	/** The chosen kit against what is carried, while packing at the bank; null otherwise. */
+	Packing packing;
+	/** How long a trip with the chosen kit usually takes, or 0 until measured. */
+	long tripMs;
 
 	/**
 	 * @param active the chosen kit's plan, or null when no account is open
@@ -64,6 +70,17 @@ public final class View
 		return this;
 	}
 
+	/**
+	 * @param packing the packing check to show at the bank, or null
+	 * @param tripMs a typical trip's length, or 0
+	 */
+	public View packing(Packing packing, long tripMs)
+	{
+		this.packing = packing;
+		this.tripMs = tripMs;
+		return this;
+	}
+
 	String name(int itemId)
 	{
 		String n = names.get(itemId);
@@ -77,10 +94,21 @@ public final class View
 		return n != null ? n : name(line.getSupply().getIcon());
 	}
 
+	/** A supply's name: its own for pooled supplies, the item's for single items. */
+	String name(Supply supply)
+	{
+		return supply.getName() != null ? supply.getName() : name(supply.getIcon());
+	}
+
 	/** "doses", "hp", or nothing for single items. */
 	static String unit(Plan.Line line)
 	{
-		String u = line.getSupply().getUnit();
+		return unit(line.getSupply());
+	}
+
+	static String unit(Supply supply)
+	{
+		String u = supply.getUnit();
 		return u == null ? "" : " " + u;
 	}
 }

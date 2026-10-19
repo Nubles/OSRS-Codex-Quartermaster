@@ -1,13 +1,17 @@
 package com.codex.quartermaster;
 
 import com.codex.quartermaster.core.Kit;
+import com.codex.quartermaster.core.KitBook;
+import com.codex.quartermaster.core.Packing;
 import com.codex.quartermaster.core.Plan;
 import com.codex.quartermaster.core.Prices;
 import com.codex.quartermaster.core.Quarters;
+import com.codex.quartermaster.core.Reminder;
 import com.codex.quartermaster.core.Trip;
 import com.codex.quartermaster.core.Usage;
 import com.codex.quartermaster.core.Warning;
 import com.codex.quartermaster.overlay.SupplyPlaque;
+import com.codex.quartermaster.overlay.WithdrawOverlay;
 import com.codex.quartermaster.ui.Actions;
 import com.codex.quartermaster.ui.Format;
 import com.codex.quartermaster.ui.ItemIcons;
@@ -132,6 +136,9 @@ public class CodexQuartermasterPlugin extends Plugin
 	private CodexQuartermasterConfig config;
 
 	private final SupplyPlaque plaque = new SupplyPlaque();
+	private WithdrawOverlay withdrawOverlay;
+	/** The kit book as last written, so it is only written again when it changes. */
+	private String lastBook;
 	private final Map<Integer, String> names = new HashMap<>();
 	private final Prices prices = id -> itemManager.getItemPrice(id);
 
@@ -155,6 +162,7 @@ public class CodexQuartermasterPlugin extends Plugin
 	/** Quiver ammo or rune pouch runes changed, which no item container reports. */
 	private boolean recarry;
 	private final Warning warning = new Warning();
+	private final Reminder reminder = new Reminder();
 	private boolean dirty;
 	private boolean unsaved;
 	private int ticks;
@@ -183,6 +191,8 @@ public class CodexQuartermasterPlugin extends Plugin
 			.build();
 		clientToolbar.addNavigation(navButton);
 		overlayManager.add(plaque);
+		withdrawOverlay = new WithdrawOverlay(itemManager);
+		overlayManager.add(withdrawOverlay);
 		clientThread.invokeLater(() ->
 		{
 			loadProfile();
@@ -204,12 +214,15 @@ public class CodexQuartermasterPlugin extends Plugin
 	protected void shutDown()
 	{
 		overlayManager.remove(plaque);
+		overlayManager.remove(withdrawOverlay);
+		withdrawOverlay.show(null);
 		clientToolbar.removeNavigation(navButton);
 		clientThread.invokeLater(() ->
 		{
 			save();
 			quarters = null;
 			profile = null;
+			lastBook = null;
 			names.clear();
 			bankOpen = false;
 		});
@@ -359,6 +372,7 @@ public class CodexQuartermasterPlugin extends Plugin
 		}
 		quarters.startTrip(carried, System.currentTimeMillis());
 		warn();
+		remind();
 		dirty = true;
 	}
 
@@ -436,6 +450,40 @@ public class CodexQuartermasterPlugin extends Plugin
 		chatMessageManager.queue(QueuedMessage.builder()
 			.type(ChatMessageType.CONSOLE)
 			.runeLiteFormattedMessage(line.build())
+			.build());
+	}
+
+	/**
+	 * When leaving the bank with the chosen kit mostly packed but a supply not packed at all, such
+	 * as the spade for Barrows or the anti-venom for Zulrah, says what was left behind.
+	 */
+	private void remind()
+	{
+		if (!config.packCheck() || !quarters.hasBank())
+		{
+			return;
+		}
+		Kit kit = quarters.activeKit();
+		Packing packing = Packing.check(kit, carried, quarters.getBank());
+		List<String> forgotten = new ArrayList<>();
+		if (packing.isUnderway())
+		{
+			for (Packing.Item item : packing.forgotten())
+			{
+				forgotten.add(supplyName(item.getSupply()).toLowerCase(Locale.ENGLISH));
+			}
+		}
+		String text = reminder.check(kit.getName(), forgotten, System.currentTimeMillis());
+		if (text == null)
+		{
+			return;
+		}
+		chatMessageManager.queue(QueuedMessage.builder()
+			.type(ChatMessageType.CONSOLE)
+			.runeLiteFormattedMessage(new ChatMessageBuilder()
+				.append(ChatColorType.HIGHLIGHT).append("Codex Quartermaster: ")
+				.append(ChatColorType.NORMAL).append(text)
+				.build())
 			.build());
 	}
 
@@ -624,7 +672,9 @@ public class CodexQuartermasterPlugin extends Plugin
 		{
 			quarters = new Quarters();
 		}
-		unsaved = false;
+		lastBook = configManager.getRSProfileConfiguration(CodexQuartermasterConfig.GROUP, KitBook.KEY);
+		// Saves from before the kit book existed get one at the next save.
+		unsaved = lastBook == null;
 		dirty = true;
 	}
 
@@ -637,6 +687,13 @@ public class CodexQuartermasterPlugin extends Plugin
 		}
 		unsaved = false;
 		configManager.setConfiguration(CodexQuartermasterConfig.GROUP, profile, QUARTERS_KEY, gson.toJson(quarters));
+		// The kits in the shape other Codex plugins read; written only when it changes.
+		String book = gson.toJson(KitBook.of(quarters, carried, this::name, config.measured()));
+		if (!book.equals(lastBook))
+		{
+			configManager.setConfiguration(CodexQuartermasterConfig.GROUP, profile, KitBook.KEY, book);
+			lastBook = book;
+		}
 		return true;
 	}
 
@@ -650,6 +707,7 @@ public class CodexQuartermasterPlugin extends Plugin
 		if (quarters == null)
 		{
 			plaque.show(null, null, null);
+			withdrawOverlay.show(null);
 			if (target != null)
 			{
 				SwingUtilities.invokeLater(() -> target.update(View.loggedOut()));
@@ -676,12 +734,24 @@ public class CodexQuartermasterPlugin extends Plugin
 			}
 		}
 		Usage usage = quarters.usage(active.getId());
+		Packing packing = quarters.hasBank() ? Packing.check(active, carried, quarters.getBank()) : null;
+		if (packing != null)
+		{
+			for (Packing.Item item : packing.getItems())
+			{
+				name(item.getSupply().getIcon());
+				item.getWithdraw().keySet().forEach(this::name);
+			}
+		}
+		boolean packAtBank = loggedIn && bankOpen && packing != null && config.packCheck();
+		withdrawOverlay.show(loggedIn && bankOpen && packing != null && config.highlightBank() ? packing.withdrawals() : null);
 		List<Trip> trips = usage == null ? Collections.emptyList() : new ArrayList<>(usage.getRecent());
 		Player player = client.getLocalPlayer();
 		View.State state = !quarters.hasBank() ? View.State.WAITING_FOR_BANK : View.State.READY;
 		View view = new View(state, loggedIn && player != null ? player.getName() : null, chosen, plans, trips,
 			usage == null ? 0 : usage.getTrips(), quarters.getBankSeen(), bankOpen, new HashMap<>(names), config.warnTrips(), now)
-			.ironman(ironman());
+			.ironman(ironman())
+			.packing(packAtBank ? packing : null, usage == null ? 0 : usage.typicalDuration());
 
 		CodexQuartermasterConfig.PlaqueMode mode = config.plaque();
 		boolean showPlaque = loggedIn && quarters.hasBank() && chosen != null
@@ -693,6 +763,12 @@ public class CodexQuartermasterPlugin extends Plugin
 			String figure = n == Plan.UNLIMITED ? "Ample" : n + (n == 1 ? " trip" : " trips");
 			String note = active.getName() + (first == null ? "" : n == 0 ? "  -  out of " + supplyName(first).toLowerCase(Locale.ENGLISH)
 				: "  -  " + supplyName(first) + " first");
+			List<Packing.Item> missing = packAtBank && packing.isUnderway() ? packing.missing() : Collections.emptyList();
+			if (!missing.isEmpty())
+			{
+				// At the bank, mid-pack, what is still to withdraw matters more than the kit's name.
+				note = "To pack: " + supplyName(missing.get(0).getSupply()) + (missing.size() > 1 ? " and " + (missing.size() - 1) + " more" : "");
+			}
 			plaque.show(figure, note, n == Plan.UNLIMITED ? Theme.GOLD : Theme.trips(n, config.warnTrips()));
 		}
 		else
@@ -707,7 +783,12 @@ public class CodexQuartermasterPlugin extends Plugin
 
 	private String supplyName(Plan.Line line)
 	{
-		return line.getSupply().getName() != null ? line.getSupply().getName() : name(line.getSupply().getIcon());
+		return supplyName(line.getSupply());
+	}
+
+	private String supplyName(com.codex.quartermaster.core.Supply supply)
+	{
+		return supply.getName() != null ? supply.getName() : name(supply.getIcon());
 	}
 
 	private String name(int itemId)

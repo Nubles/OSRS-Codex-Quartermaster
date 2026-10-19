@@ -1,5 +1,6 @@
 package com.codex.quartermaster.ui;
 
+import com.codex.quartermaster.core.Packing;
 import com.codex.quartermaster.core.Plan;
 import com.codex.quartermaster.core.Supplies;
 import com.codex.quartermaster.core.Supply;
@@ -16,6 +17,7 @@ import java.awt.Toolkit;
 import java.awt.datatransfer.StringSelection;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -232,12 +234,26 @@ public class QuartermasterPanel extends PluginPanel
 			return;
 		}
 		Plan plan = view.active;
+		if (view.packing != null)
+		{
+			addPacking(stack, view.packing);
+		}
 		JPanel tiles = new JPanel(new GridLayout(1, 2, 6, 0));
 		tiles.setOpaque(false);
 		tiles.add(new StatTile(Format.coins(plan.tripCost()), "Per trip", view.ironman ? "GE value" : "GE prices", Theme.GOLD));
 		boolean measured = view.measured >= Usage.TRUSTED;
-		tiles.add(new StatTile(measured ? String.valueOf(view.measured) : "-", "Measured",
-			measured ? "trips learned" : view.measured == 1 ? "1 trip so far" : "make a trip", measured ? Theme.TEAL : Theme.TEXT_MUTED));
+		int left = plan.trips();
+		if (measured && view.tripMs > 0 && left != Plan.UNLIMITED)
+		{
+			// How much play the bank holds, at the pace the player really goes.
+			tiles.add(new StatTile(left == 0 ? "-" : Format.span(left * view.tripMs), "Lasts",
+				"at " + Format.duration(view.tripMs) + " a trip", left == 0 ? Theme.TEXT_MUTED : Theme.TEAL));
+		}
+		else
+		{
+			tiles.add(new StatTile(measured ? String.valueOf(view.measured) : "-", "Measured",
+				measured ? "trips learned" : view.measured == 1 ? "1 trip so far" : "make a trip", measured ? Theme.TEAL : Theme.TEXT_MUTED));
+		}
 		stack.add(tiles);
 
 		stack.add(new SectionHeader("Supplies", plan.getKit().getName()));
@@ -265,7 +281,7 @@ public class QuartermasterPanel extends PluginPanel
 		list.add(rows, BorderLayout.CENTER);
 		stack.add(list);
 		String foot = measured
-			? "* measured from your own trips"
+			? "* measured from your own " + view.measured + " trips"
 			: plan.getKit().isPreset() ? "Typical amounts until your own trips are measured" : "As packed until your own trips are measured";
 		stack.add(Ui.wrapped(foot, Theme.small(), Theme.TEXT_FAINT, WIDTH));
 
@@ -292,6 +308,62 @@ public class QuartermasterPanel extends PluginPanel
 			stack.add(Ui.label("Bank as last seen " + Format.ago(view.now - view.bankSeen), Theme.small(), Theme.TEXT_FAINT));
 		}
 		replace(supplies, stack);
+	}
+
+	/**
+	 * At the bank, the chosen kit against what is carried: what is still to withdraw and how many
+	 * of which bank item, or a quiet line when everything is in.
+	 */
+	private void addPacking(StackPanel stack, Packing packing)
+	{
+		int total = packing.getItems().size();
+		int packed = packing.packedCount();
+		stack.add(new SectionHeader("Packing", packed + " of " + total + " packed"));
+		if (packing.isComplete())
+		{
+			Card done = new Card(new BorderLayout(0, 2));
+			done.accent(Theme.GREEN);
+			done.add(Ui.label("Packed for " + packing.getKit().getName(), Theme.body(), Theme.GREEN), BorderLayout.NORTH);
+			done.add(Ui.wrapped("Everything one trip takes is in your inventory.", Theme.small(), Theme.TEXT_MUTED, WIDTH - 12),
+				BorderLayout.CENTER);
+			stack.add(done);
+			return;
+		}
+		Card card = new Card(new BorderLayout());
+		card.accent(packing.isUnderway() ? Theme.EMBER : Theme.GOLD_DIM);
+		StackPanel rows = new StackPanel(2, 0);
+		for (Packing.Item item : packing.missing())
+		{
+			// The item to take leads, since that is what to look for in the bank.
+			Map.Entry<Integer, Long> take = item.getWithdraw().isEmpty() ? null : item.getWithdraw().entrySet().iterator().next();
+			int icon = take == null ? item.getSupply().getIcon() : take.getKey();
+			String name = take == null ? view.name(item.getSupply()) : view.name(take.getKey());
+			String amount = take == null ? "-" : "x" + Format.amount(take.getValue());
+			rows.add(new BuyRow(icon, name, packNote(item), amount, item.isForgotten() ? Theme.BLOOD : Theme.EMBER, icons));
+		}
+		card.add(rows, BorderLayout.CENTER);
+		stack.add(card);
+	}
+
+	/** What a packing row is short of, and anything else to take for it: "8 doses short", "then 2 Lobster". */
+	private String packNote(Packing.Item item)
+	{
+		if (item.getWithdraw().isEmpty())
+		{
+			return "none in your bank";
+		}
+		if (item.getWithdraw().size() > 1)
+		{
+			Iterator<Map.Entry<Integer, Long>> it = item.getWithdraw().entrySet().iterator();
+			it.next();
+			Map.Entry<Integer, Long> then = it.next();
+			return "then " + Format.amount(then.getValue()) + " " + view.name(then.getKey());
+		}
+		if (item.isTool())
+		{
+			return item.isForgotten() ? "not packed; it comes back" : "comes back every trip";
+		}
+		return item.isForgotten() ? "not packed" : Format.amount(item.getMissing()) + View.unit(item.getSupply()) + " short";
 	}
 
 	private String used(Trip trip)

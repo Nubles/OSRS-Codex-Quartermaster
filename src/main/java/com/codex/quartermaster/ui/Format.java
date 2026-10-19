@@ -136,6 +136,17 @@ public final class Format
 		return minutes / 60 + "h " + minutes % 60 + "m";
 	}
 
+	/** A long stretch of play: "6h 40m" up to two days, then "3d 4h". */
+	public static String span(long ms)
+	{
+		long hours = ms / 3_600_000;
+		if (hours < 48)
+		{
+			return duration(ms);
+		}
+		return hours / 24 + "d " + hours % 24 + "h";
+	}
+
 	/** "14:02" in the player's own time. */
 	public static String time(long epochMs)
 	{

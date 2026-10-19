@@ -1,6 +1,7 @@
 package com.codex.quartermaster.core;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -64,6 +65,26 @@ public class Usage
 			sum += t.getCost();
 		}
 		return sum / recent.size();
+	}
+
+	/**
+	 * How long a trip usually takes: the median of the last ten measured trips, so one trip left
+	 * idling at the bank does not stretch it. Zero until two trips are measured.
+	 */
+	public long typicalDuration()
+	{
+		if (recent.size() < TRUSTED)
+		{
+			return 0;
+		}
+		List<Long> times = new ArrayList<>();
+		for (int i = Math.max(0, recent.size() - 10); i < recent.size(); i++)
+		{
+			times.add(recent.get(i).duration());
+		}
+		Collections.sort(times);
+		int n = times.size();
+		return n % 2 == 1 ? times.get(n / 2) : (times.get(n / 2 - 1) + times.get(n / 2)) / 2;
 	}
 
 	void record(Kit kit, Trip trip)
