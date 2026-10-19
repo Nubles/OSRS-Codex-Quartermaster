@@ -26,7 +26,6 @@ import com.codex.quartermaster.ui.Sigil;
 import com.codex.quartermaster.ui.Theme;
 import com.codex.quartermaster.ui.View;
 import com.google.gson.Gson;
-import com.google.gson.JsonParseException;
 import com.google.inject.Provides;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -806,23 +805,7 @@ public class CodexQuartermasterPlugin extends Plugin
 		{
 			return;
 		}
-		try
-		{
-			String saved = configManager.getRSProfileConfiguration(CodexQuartermasterConfig.GROUP, QUARTERS_KEY);
-			if (saved != null && !saved.isEmpty())
-			{
-				Quarters read = gson.fromJson(saved, Quarters.class);
-				quarters = read == null ? null : read.repair();
-			}
-		}
-		catch (JsonParseException e)
-		{
-			log.warn("Could not read the saved quarters, starting afresh", e);
-		}
-		if (quarters == null)
-		{
-			quarters = new Quarters();
-		}
+		quarters = Quarters.read(gson, configManager.getRSProfileConfiguration(CodexQuartermasterConfig.GROUP, QUARTERS_KEY));
 		lastBook = configManager.getRSProfileConfiguration(CodexQuartermasterConfig.GROUP, KitBook.KEY);
 		// Saves from before the kit book existed get one at the next save.
 		unsaved = lastBook == null;
@@ -846,7 +829,7 @@ public class CodexQuartermasterPlugin extends Plugin
 		SharedBank shared = SharedBank.read(gson,
 			configManager.getRSProfileConfiguration(SharedBank.STEWARD_GROUP, SharedBank.STEWARD_KEY),
 			configManager.getRSProfileConfiguration(SharedBank.ROADMAP_GROUP, SharedBank.ROADMAP_KEY));
-		if (quarters.adoptBank(shared, "Codex Bank Steward"))
+		if (quarters.adoptBank(shared, "Codex Bank Steward", System.currentTimeMillis()))
 		{
 			unsaved = true;
 			dirty = true;

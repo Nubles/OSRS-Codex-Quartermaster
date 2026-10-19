@@ -1,5 +1,6 @@
 package com.codex.quartermaster.core;
 
+import com.google.gson.Gson;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -26,6 +27,8 @@ public class Quarters
 	/** How much of a saved kit must be packed for it to be recognised. */
 	static final double MATCH = 0.75;
 	public static final int DEFAULT_TARGET = 10;
+	/** The most trips a restock is planned for, the panel's largest choice. */
+	public static final int TARGET_MAX = 100;
 
 	private Map<Integer, Long> bank = new HashMap<>();
 	private long bankSeen;
@@ -80,12 +83,16 @@ public class Quarters
 	 * than the bank this plugin last saw: the Quartermaster was off, or new, at that bank visit.
 	 *
 	 * @param from the plugin's name, shown with the bank's age
+	 * @param now the time now, in epoch milliseconds
 	 * @return whether it was taken
 	 */
-	public boolean adoptBank(SharedBank shared, String from)
+	public boolean adoptBank(SharedBank shared, String from, long now)
 	{
-		if (shared == null || !shared.isComplete() || shared.getSavedAt() <= 0
-			|| shared.getSavedAt() <= bankSeen + (hasBank() ? ADOPT_MARGIN_MS : 0))
+		// A time past now is damage: one saved here no longer stands in the way, and one saved by
+		// the other plugin is not taken, or it would stand in the way of every bank after it.
+		long seen = bankSeen > now + ADOPT_MARGIN_MS ? 0 : bankSeen;
+		if (shared == null || !shared.isComplete() || shared.getSavedAt() <= 0 || shared.getSavedAt() > now + ADOPT_MARGIN_MS
+			|| shared.getSavedAt() <= seen + (seen > 0 ? ADOPT_MARGIN_MS : 0))
 		{
 			return false;
 		}
@@ -129,7 +136,7 @@ public class Quarters
 
 	public void setTarget(int target)
 	{
-		this.target = Math.max(1, target);
+		this.target = Math.max(1, Math.min(TARGET_MAX, target));
 	}
 
 	/** The player's own kits in the order they were saved, then the presets. */
@@ -591,33 +598,81 @@ public class Quarters
 		return usage.computeIfAbsent(kitId, k -> new Usage());
 	}
 
-	/** Restores what saved data can leave out, after it is read back. */
+	/**
+	 * Reads the quarters saved for an account, or fresh ones when there are none. A damaged save
+	 * keeps all it can: a field or kit that cannot be read is lost alone.
+	 */
+	public static Quarters read(Gson gson, String saved)
+	{
+		Quarters read = Salvage.read(gson, saved, Quarters.class);
+		return read == null ? new Quarters() : read.repair();
+	}
+
+	/** Restores what saved data can leave out, and brings back what damage left out of range. */
 	public Quarters repair()
 	{
-		if (bank == null)
-		{
-			bank = new HashMap<>();
-		}
+		bank = counts(bank);
+		stored = counts(stored);
+		bankSeen = Math.max(0, bankSeen);
 		if (kits == null)
 		{
 			kits = new ArrayList<>();
 		}
 		kits.removeIf(k -> k == null || k.getId() == null || k.getName() == null);
 		kits.forEach(Kit::repair);
+		// New kits are numbered on from the count; one saved behind its kits would reuse their ids.
+		for (Kit k : kits)
+		{
+			if (k.getId().startsWith("kit:"))
+			{
+				try
+				{
+					saved = Math.max(saved, Integer.parseInt(k.getId().substring(4)));
+				}
+				catch (NumberFormatException e)
+				{
+					// Not one this numbered; it cannot clash.
+				}
+			}
+		}
+		saved = Math.max(0, saved);
+		Set<String> ids = new HashSet<>();
+		Presets.all().forEach(p -> ids.add(p.getId()));
+		for (Kit k : kits)
+		{
+			if (!ids.add(k.getId()))
+			{
+				k.setId("kit:" + (++saved));
+				ids.add(k.getId());
+			}
+		}
 		if (usage == null)
 		{
 			usage = new HashMap<>();
 		}
-		usage.values().removeIf(u -> u == null);
+		usage.entrySet().removeIf(e -> e.getKey() == null || e.getValue() == null);
 		usage.values().forEach(Usage::repair);
-		if (stored == null)
-		{
-			stored = new HashMap<>();
-		}
-		if (target < 1)
-		{
-			target = DEFAULT_TARGET;
-		}
+		target = target < 1 ? DEFAULT_TARGET : Math.min(target, TARGET_MAX);
 		return this;
+	}
+
+	/**
+	 * A copy of saved counts with only real items held at least once, none past the most one bank
+	 * slot holds.
+	 */
+	private static Map<Integer, Long> counts(Map<Integer, Long> saved)
+	{
+		Map<Integer, Long> out = new HashMap<>();
+		if (saved != null)
+		{
+			saved.forEach((id, q) ->
+			{
+				if (id != null && id > 0 && q != null && q > 0)
+				{
+					out.put(id, Math.min(q, Integer.MAX_VALUE));
+				}
+			});
+		}
+		return out;
 	}
 }

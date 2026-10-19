@@ -6,6 +6,9 @@ import java.util.Map;
 /** One measured trip: when it ran, what each supply it took was used down by, and what that cost. */
 public class Trip
 {
+	/** More coins than any trip moves, so sums over the trips kept cannot overflow. */
+	private static final long MOST_COINS = 1_000_000_000_000L;
+
 	private long start;
 	private long end;
 	private Map<String, Long> used = new LinkedHashMap<>();
@@ -86,6 +89,21 @@ public class Trip
 	public Long net()
 	{
 		return loot == null ? null : loot - cost;
+	}
+
+	/** Drops what damage left that no trip could hold: a count below zero, or none at all. */
+	void repair()
+	{
+		used.entrySet().removeIf(e -> e.getKey() == null || e.getValue() == null || e.getValue() < 0);
+		if (took != null)
+		{
+			took.entrySet().removeIf(e -> e.getKey() == null || e.getValue() == null || e.getValue() < 0);
+		}
+		cost = Math.max(0, Math.min(MOST_COINS, cost));
+		if (loot != null)
+		{
+			loot = Math.max(-MOST_COINS, Math.min(MOST_COINS, loot));
+		}
 	}
 
 	public long duration()

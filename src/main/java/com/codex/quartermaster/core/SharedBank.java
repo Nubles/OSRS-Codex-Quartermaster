@@ -3,7 +3,6 @@ package com.codex.quartermaster.core;
 import com.google.gson.Gson;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
-import com.google.gson.JsonParseException;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
@@ -78,14 +77,15 @@ public final class SharedBank
 			Long qty = number(e.getValue());
 			if (id != null && id > 0 && qty != null && qty > 0 && items.size() < MAX_ITEMS)
 			{
-				items.put(id, qty);
+				// No bank slot holds more than this; a larger count is damage, held to it.
+				items.put(id, Math.min(qty, Integer.MAX_VALUE));
 			}
 		}
 		Long savedAt = number(root.get("savedAt"));
 		JsonElement truncated = root.get("truncated");
 		boolean cut = truncated != null && truncated.isJsonPrimitive() && truncated.getAsJsonPrimitive().isBoolean()
 			&& truncated.getAsBoolean();
-		return new SharedBank(Source.BANK_STEWARD, items, savedAt == null ? 0 : savedAt, !cut);
+		return new SharedBank(Source.BANK_STEWARD, items, savedAt == null ? 0 : Math.max(0, savedAt), !cut);
 	}
 
 	static SharedBank readRoadmap(Gson gson, String json)
@@ -160,8 +160,9 @@ public final class SharedBank
 			JsonElement root = gson.fromJson(json, JsonElement.class);
 			return root != null && root.isJsonObject() ? root.getAsJsonObject() : null;
 		}
-		catch (JsonParseException | IllegalStateException | NumberFormatException e)
+		catch (RuntimeException | StackOverflowError e)
 		{
+			// Cut short, not JSON, or garbage nested deeper than Gson reads.
 			return null;
 		}
 	}

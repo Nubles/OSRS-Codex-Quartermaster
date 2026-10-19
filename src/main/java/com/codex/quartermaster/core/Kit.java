@@ -88,6 +88,11 @@ public class Kit
 		return false;
 	}
 
+	void setId(String id)
+	{
+		this.id = id;
+	}
+
 	void setName(String name)
 	{
 		this.name = name;
@@ -107,6 +112,11 @@ public class Kit
 			needs = new ArrayList<>();
 		}
 		needs.removeIf(n -> n == null || n.getSupply() == null || Supplies.get(n.getSupply()) == null);
+		// An amount out of the range the panel allows is held to it; a supply listed twice is kept once.
+		java.util.Set<String> seen = new java.util.HashSet<>();
+		needs.removeIf(n -> !seen.add(n.getSupply()));
+		needs.replaceAll(n -> n.getPerTrip() >= 0 && n.getPerTrip() <= Quarters.AMOUNT_MAX ? n
+			: new Need(n.getSupply(), Math.max(0, Math.min(Quarters.AMOUNT_MAX, n.getPerTrip()))));
 		return this;
 	}
 }

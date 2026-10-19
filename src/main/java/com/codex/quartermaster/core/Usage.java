@@ -124,6 +124,16 @@ public class Usage
 			recent = new ArrayList<>();
 		}
 		recent.removeIf(t -> t == null || t.getUsed() == null);
+		recent.forEach(Trip::repair);
+		while (recent.size() > RECENT)
+		{
+			recent.remove(0);
+		}
+		// An average that is not a number, or below zero, was never a measurement.
+		perTrip.entrySet().removeIf(e -> e.getKey() == null || e.getValue() == null || !(e.getValue() >= 0));
+		perTrip.replaceAll((k, v) -> Math.min(v, Quarters.AMOUNT_MAX));
+		counts.entrySet().removeIf(e -> e.getKey() == null || e.getValue() == null || e.getValue() < 0);
+		trips = Math.max(0, trips);
 		return this;
 	}
 }

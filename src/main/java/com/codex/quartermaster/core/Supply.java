@@ -98,7 +98,9 @@ public final class Supply
 			Long qty = items.get(e.getKey());
 			if (qty != null && qty > 0)
 			{
-				total += qty * e.getValue();
+				// A count near the top of a long is held there rather than wrapping below zero.
+				long units = qty > Long.MAX_VALUE / e.getValue() ? Long.MAX_VALUE : qty * e.getValue();
+				total = units > Long.MAX_VALUE - total ? Long.MAX_VALUE : total + units;
 			}
 		}
 		return total;
