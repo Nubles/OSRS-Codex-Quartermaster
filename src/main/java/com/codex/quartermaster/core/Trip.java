@@ -38,6 +38,16 @@ public class Trip
 		return t == null ? otherwise : t;
 	}
 
+	/** Notes what a supply set out with, for a trip from before trips noted it; a noted amount stands. */
+	void tookAtLeast(String supply, long amount)
+	{
+		if (took == null)
+		{
+			took = new LinkedHashMap<>();
+		}
+		took.putIfAbsent(supply, amount);
+	}
+
 	public long getStart()
 	{
 		return start;

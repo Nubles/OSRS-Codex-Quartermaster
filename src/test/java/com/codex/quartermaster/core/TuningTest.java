@@ -149,4 +149,22 @@ public class TuningTest
 		assertEquals(Arrays.asList("Zulrah", "Vorkath", Presets.all().get(0).getName()),
 			Arrays.asList(q.restockKits().get(0).getName(), q.restockKits().get(1).getName(), q.restockKits().get(2).getName()));
 	}
+
+	@Test
+	public void oldTripsAreNotCalledDryOnceTheKitIsTuned()
+	{
+		Quarters q = new Quarters();
+		Kit kit = q.capture("Mine", items(ItemID.SHARK, 14), id -> true);
+		// Five trips from before trips noted what they set out with, eating 7 or 8 sharks of 14.
+		for (int i = 0; i < 5; i++)
+		{
+			q.usageOrNew(kit.getId()).record(kit, new Trip(0, 600_000, used("FOOD", i % 2 == 0 ? 140 : 160), 0));
+		}
+		Usage u = q.usage(kit.getId());
+		List<Tuning.Advice> advice = Tuning.of(kit, u, items(ItemID.SHARK, 14));
+		assertEquals(160, advice.get(0).getSuggested());
+		assertTrue(q.tune(kit.getId(), advice));
+		// Those trips set out with 14 sharks, not the 8 the kit now takes: none of them ran dry.
+		assertTrue(Tuning.of(q.kit(kit.getId()), u, items(ItemID.SHARK, 8)).isEmpty());
+	}
 }

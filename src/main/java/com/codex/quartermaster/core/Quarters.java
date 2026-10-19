@@ -289,9 +289,21 @@ public class Quarters
 			if (k.getId().equals(kitId))
 			{
 				boolean changed = false;
+				Usage trips = usage.get(kitId);
 				for (Tuning.Advice a : advice)
 				{
-					changed |= k.setPerTrip(a.getSupply().getKey(), a.getSuggested());
+					String key = a.getSupply().getKey();
+					Need was = k.need(key);
+					if (was != null && trips != null)
+					{
+						// Trips from before trips noted what they set out with stood in with the kit's
+						// amount; keep the amount they really took, so the new one does not make them look dry.
+						for (Trip t : trips.getRecent())
+						{
+							t.tookAtLeast(key, was.getPerTrip());
+						}
+					}
+					changed |= k.setPerTrip(key, a.getSuggested());
 				}
 				return changed;
 			}
@@ -467,8 +479,14 @@ public class Quarters
 			return null;
 		}
 		Trip trip = new Trip(began, now, used, took, cost);
-		usage.computeIfAbsent(kit.getId(), k -> new Usage()).record(kit, trip);
+		usageOrNew(kit.getId()).record(kit, trip);
 		return trip;
+	}
+
+	/** A kit's trips, made empty if it has none yet. */
+	Usage usageOrNew(String kitId)
+	{
+		return usage.computeIfAbsent(kitId, k -> new Usage());
 	}
 
 	/** Restores what saved data can leave out, after it is read back. */
