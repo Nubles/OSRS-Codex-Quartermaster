@@ -92,6 +92,7 @@ public class CodexQuartermasterPlugin extends Plugin
 	private static final int SAVE_TICKS = 50;
 	/** Ticks between recounts at today's prices, about a minute. */
 	private static final int REPRICE_TICKS = 100;
+	private static final int INVENTORY_SLOTS = 28;
 	private static final int[] POTION_STORE_VARS = {
 		VarPlayerID.POTIONSTORE_BASE_VAR_1, VarPlayerID.POTIONSTORE_BASE_VAR_2, VarPlayerID.POTIONSTORE_BASE_VAR_3,
 		VarPlayerID.POTIONSTORE_BASE_VAR_4, VarPlayerID.POTIONSTORE_BASE_VAR_5, VarPlayerID.POTIONSTORE_BASE_VAR_6
@@ -163,6 +164,8 @@ public class CodexQuartermasterPlugin extends Plugin
 	private boolean recarry;
 	private final Warning warning = new Warning();
 	private final Reminder reminder = new Reminder();
+	/** What was carried when the bank opened, to tell a packing visit from one that only deposits; null when not seen. */
+	private Map<Integer, Long> openedWith;
 	private boolean dirty;
 	private boolean unsaved;
 	private int ticks;
@@ -260,6 +263,7 @@ public class CodexQuartermasterPlugin extends Plugin
 			bankOpen = false;
 			storageGrace = 0;
 			readStorage = false;
+			openedWith = null;
 			if (quarters != null)
 			{
 				// What changes while logged out, on another client, is not what the trip used.
@@ -278,6 +282,7 @@ public class CodexQuartermasterPlugin extends Plugin
 		bankOpen = false;
 		storageGrace = 0;
 		readStorage = false;
+		openedWith = null;
 		carried = client.getGameState() == GameState.LOGGED_IN ? readCarried() : Collections.emptyMap();
 		publish();
 	}
@@ -347,7 +352,8 @@ public class CodexQuartermasterPlugin extends Plugin
 		bankOpen = true;
 		readStorage = true;
 		// The bank has just opened, so what is carried is still what came back from the trip.
-		Trip trip = quarters.endTrip(readCarried(), System.currentTimeMillis(), prices);
+		openedWith = readCarried();
+		Trip trip = quarters.endTrip(openedWith, System.currentTimeMillis(), prices);
 		if (trip != null)
 		{
 			unsaved = true;
@@ -373,6 +379,7 @@ public class CodexQuartermasterPlugin extends Plugin
 		quarters.startTrip(carried, System.currentTimeMillis());
 		warn();
 		remind();
+		openedWith = null;
 		dirty = true;
 	}
 
@@ -463,6 +470,11 @@ public class CodexQuartermasterPlugin extends Plugin
 		// A preset's packing list is a guess at a typical trip, so only a kit the player packed and
 		// saved themselves is held to it out loud.
 		if (!config.packCheck() || !quarters.hasBank() || kit.isPreset())
+		{
+			return;
+		}
+		// A visit that only deposited loot, or took nothing for this kit, was not packing it.
+		if (openedWith == null || !Packing.withdrewFor(kit, openedWith, carried))
 		{
 			return;
 		}
@@ -746,7 +758,8 @@ public class CodexQuartermasterPlugin extends Plugin
 			}
 		}
 		boolean packAtBank = loggedIn && bankOpen && packing != null && !packing.getItems().isEmpty() && config.packCheck();
-		withdrawOverlay.show(loggedIn && bankOpen && packing != null && config.highlightBank() ? packing.withdrawals() : null);
+		withdrawOverlay.show(loggedIn && bankOpen && packing != null && config.highlightBank() && packingNow(packing)
+			? packing.withdrawals() : null);
 		List<Trip> trips = usage == null ? Collections.emptyList() : new ArrayList<>(usage.getRecent());
 		Player player = client.getLocalPlayer();
 		View.State state = !quarters.hasBank() ? View.State.WAITING_FOR_BANK : View.State.READY;
@@ -781,6 +794,36 @@ public class CodexQuartermasterPlugin extends Plugin
 		{
 			SwingUtilities.invokeLater(() -> target.update(view));
 		}
+	}
+
+	/**
+	 * Whether the bank is worth marking for the packing check: the kit is part-packed, or the
+	 * inventory has room for what is still to take. A visit to drop off a full inventory of loot
+	 * is left unmarked until there is room. Client thread only.
+	 */
+	private boolean packingNow(Packing packing)
+	{
+		Map<Integer, Long> withdrawals = packing.withdrawals();
+		if (withdrawals.isEmpty())
+		{
+			return false;
+		}
+		ItemContainer inv = client.getItemContainer(InventoryID.INV);
+		Set<Integer> held = new HashSet<>();
+		int used = 0;
+		if (inv != null)
+		{
+			for (Item item : inv.getItems())
+			{
+				if (item.getId() >= 0 && item.getQuantity() > 0)
+				{
+					used++;
+					held.add(item.getId());
+				}
+			}
+		}
+		long need = Packing.slotsNeeded(withdrawals, held, id -> itemManager.getItemComposition(id).isStackable());
+		return packing.worthMarking(INVENTORY_SLOTS - used, need);
 	}
 
 	private String supplyName(Plan.Line line)

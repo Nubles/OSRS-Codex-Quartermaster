@@ -7,6 +7,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.IntPredicate;
 
 /**
  * Whether what is carried is a full kit: each supply against what the kit packs for one trip,
@@ -280,6 +281,61 @@ public final class Packing
 			}
 		}
 		return started * 2 >= items.size();
+	}
+
+	/**
+	 * Whether anything the kit counts was taken out of the bank during the visit. A visit that only
+	 * deposits loot leaves with what came back from the trip, and saying what is missing from that
+	 * would be wrong: the player was not packing.
+	 *
+	 * @param opened what was carried when the bank opened
+	 * @param closed what is carried as it closes
+	 */
+	public static boolean withdrewFor(Kit kit, Map<Integer, Long> opened, Map<Integer, Long> closed)
+	{
+		for (Need need : kit.getNeeds())
+		{
+			Supply supply = Supplies.get(need.getSupply());
+			if (supply != null && supply.count(closed) > supply.count(opened))
+			{
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/**
+	 * Inventory slots the withdrawals take: one a stack for stackable items, none when that stack
+	 * is already in the inventory, and one each for anything else.
+	 *
+	 * @param inInventory items already in the inventory
+	 * @param stackable whether an item stacks
+	 */
+	public static long slotsNeeded(Map<Integer, Long> withdrawals, Set<Integer> inInventory, IntPredicate stackable)
+	{
+		long slots = 0;
+		for (Map.Entry<Integer, Long> e : withdrawals.entrySet())
+		{
+			if (stackable.test(e.getKey()))
+			{
+				slots += inInventory.contains(e.getKey()) ? 0 : 1;
+			}
+			else
+			{
+				slots += e.getValue();
+			}
+		}
+		return slots;
+	}
+
+	/**
+	 * Whether the bank is worth marking: the player is packing this kit, judged by it being
+	 * underway or by the inventory having room for everything still to take. A bank visit with a
+	 * full inventory of loot to deposit is not marked until there is room.
+	 */
+	public boolean worthMarking(long freeSlots, long slotsNeeded)
+	{
+		return !withdrawals().isEmpty() && (isUnderway() || freeSlots >= slotsNeeded);
 	}
 
 	/** Every bank item to withdraw, with how many, for highlighting in the bank. */

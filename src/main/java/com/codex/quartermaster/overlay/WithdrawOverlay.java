@@ -8,6 +8,7 @@ import java.awt.Rectangle;
 import java.awt.image.BufferedImage;
 import java.util.Collections;
 import java.util.Map;
+import net.runelite.api.gameval.InterfaceID;
 import net.runelite.api.widgets.WidgetItem;
 import net.runelite.client.game.ItemManager;
 import net.runelite.client.ui.overlay.WidgetItemOverlay;
@@ -27,7 +28,8 @@ public class WithdrawOverlay extends WidgetItemOverlay
 	public WithdrawOverlay(ItemManager itemManager)
 	{
 		this.itemManager = itemManager;
-		showOnBank();
+		// Only your own bank: showOnBank() would also draw over group storage, which is not yours.
+		drawAfterLayer(InterfaceID.Bankmain.ITEMS);
 	}
 
 	/** @param items bank items to mark with how many to take, or empty to mark nothing */

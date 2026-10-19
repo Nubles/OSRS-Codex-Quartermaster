@@ -13,7 +13,7 @@ It is the seventh plugin in the **Codex** suite, after [Codex Navigator](https:/
 ## What it does
 
 - **Supplies.** The trips your bank supports for the chosen kit in large gilt figures, with a gauge against your restock target, and what runs out first. Every supply gets a row with what you hold, what a trip uses and how many trips that lasts, with a row of ration pips up to your restock target, so the short one stands out. Items that come back every trip (a spade, a rune pouch) are marked as kept and never count against you. Below that, what a trip costs at today's prices and your recent trips with how long they ran, what they used and what that cost.
-- **Packing check.** At the bank, the Supplies page lists what the chosen kit still needs, each with the bank item to take and how many ("Prayer potion(4) x2, 8 doses short"), most urgent first, until it says "Packed for Vorkath". Doses kept only in potion storage are pointed out. The bank itself outlines those items in gold with a small count, and the marks go as the items come out. Leave the bank with most of a saved kit packed but a supply not packed at all, such as the spade for Barrows, and a line in the chat box says what you left behind. A preset never nags in the chat box, and once your trips show you never use one of its supplies (anti-venom in a serpentine helm), it stops asking for it.
+- **Packing check.** At the bank, the Supplies page lists what the chosen kit still needs, each with the bank item to take and how many ("Prayer potion(4) x2, 8 doses short"), most urgent first, until it says "Packed for Vorkath". Doses kept only in potion storage are pointed out. While you are packing (the kit part-packed, or room in your inventory for the rest), the bank itself outlines those items in gold with a small count, and the marks go as the items come out; a visit to drop off a full inventory of loot is left unmarked. Pack most of a saved kit but leave the bank with a supply not packed at all, such as the spade for Barrows, and a line in the chat box says what you left behind. A preset never nags in the chat box, and once your trips show you never use one of its supplies (anti-venom in a serpentine helm), it stops asking for it.
 - **How long the bank lasts.** Once two trips are measured, a tile turns the trips left into play time at your own pace: "4h 54m at 21m a trip".
 - **Restock.** Pick a target of 5, 10, 25, 50 or 100 trips and get the shopping list: each supply bought as the item you already use most of, in its full form (anglerfish if you eat anglerfish, 4-dose divine ranging potions if that is what your bank holds, never cake slices or 1-dose potions), with quantities and the total bill. Copy the list to the clipboard for the Grand Exchange. Supplies the exchange does not sell are listed separately.
 - **Iron accounts.** Ironmen, hardcore, ultimate and group irons get the same page as a list of what to make or gather, most urgent first, instead of a Grand Exchange bill.
@@ -64,7 +64,7 @@ Other plugins, Codex ones first, can read your kits without copying Quartermaste
       "needs": [
         { "supply": "FOOD", "name": "Food", "unit": "hp", "perTrip": 240, "measured": 181.5,
           "items": { "385": 20, "391": 22, "13441": 22 } },
-        { "supply": "item:952", "name": "Spade", "unit": null, "perTrip": 0, "items": { "952": 1 } }
+        { "supply": "item:952", "name": "Spade", "perTrip": 0, "items": { "952": 1 } }
       ]
     }
   ]
@@ -72,7 +72,8 @@ Other plugins, Codex ones first, can read your kits without copying Quartermaste
 ```
 
 - `kits` holds your saved kits first, then the presets (`preset: true`).
-- `tripsLeft` is the trips the bank supports, or `-1` when nothing in the kit is used up or the bank has not been seen; `limiting` is the supply that runs out first, or `null`.
+- `tripsLeft` is the trips the bank supports, or `-1` when nothing in the kit is used up or the bank has not been seen; `limiting` is the supply that runs out first, and is left out when `tripsLeft` is `-1`.
+- Fields with no value are left out rather than written as `null`: `unit` for single-item supplies, `limiting` as above, and `measured` until it is known. Read a missing field as null.
 - Each need's `items` maps every item id that counts toward it to its units each, so a pooled supply such as food or prayer resolves to concrete items. Ids are canonical, as the bank holds them. `perTrip` is the kit's own amount (`0` for a tool that comes back); `measured` is what trips really used on average, present once two trips are measured.
 - The shape only grows. A breaking change would use a new key. The older internal `quarters` entry keeps its field names for plugins that already read it.
 

@@ -77,7 +77,7 @@ public interface CodexQuartermasterConfig extends Config
 	@ConfigItem(
 		keyName = "highlightBank",
 		name = "Highlight what to withdraw",
-		description = "Outline the bank items the chosen kit still needs, with how many to take",
+		description = "While you pack the chosen kit at the bank (part-packed, or with room in your inventory for the rest), outline the bank items it still needs, with how many to take",
 		position = 5
 	)
 	default boolean highlightBank()

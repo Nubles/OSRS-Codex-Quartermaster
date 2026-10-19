@@ -197,4 +197,48 @@ public class PackingTest
 		assertEquals(Long.valueOf(4), w.get(ItemID._4DOSEPRAYERRESTORE));
 		assertNull(w.get(ItemID._1DOSEPRAYERRESTORE));
 	}
+
+	@Test
+	public void aDepositOnlyVisitIsNotPacking()
+	{
+		// Back from a trip with leftovers, banking only the loot: nothing for the kit came out, so
+		// the food eaten on the trip is not "forgotten".
+		Map<Integer, Long> back = items(ItemID._4DOSEPRAYERRESTORE, 1, ItemID._4DOSERANGERSPOTION, 1, ItemID.SPADE, 1,
+			ItemID.DRAGON_BONES, 2);
+		Map<Integer, Long> leaving = items(ItemID._4DOSEPRAYERRESTORE, 1, ItemID._4DOSERANGERSPOTION, 1, ItemID.SPADE, 1);
+		Packing p = Packing.check(VORKATH, leaving, items(ItemID.SHARK, 50));
+		assertTrue(p.isUnderway());
+		assertEquals(1, p.forgotten().size());
+		assertFalse(Packing.withdrewFor(VORKATH, back, leaving));
+		// Taking a prayer potion out is packing, and then the missing food is worth a word.
+		assertTrue(Packing.withdrewFor(VORKATH, back, items(ItemID._4DOSEPRAYERRESTORE, 2, ItemID._4DOSERANGERSPOTION, 1,
+			ItemID.SPADE, 1)));
+	}
+
+	@Test
+	public void bankIsMarkedOnlyWhilePacking()
+	{
+		Map<Integer, Long> bank = items(ItemID.SHARK, 50, ItemID._4DOSEPRAYERRESTORE, 40, ItemID._4DOSERANGERSPOTION, 9,
+			ItemID.SPADE, 1);
+		// An inventory full of loot: nothing carried for the kit and no room, so no marks.
+		Packing loot = Packing.check(VORKATH, items(), bank);
+		assertFalse(loot.isUnderway());
+		long need = Packing.slotsNeeded(loot.withdrawals(), Collections.emptySet(), id -> false);
+		// 10 sharks, 4 prayer potions, 1 ranging potion and a spade.
+		assertEquals(16, need);
+		assertFalse(loot.worthMarking(0, need));
+		// Deposited: room for the lot, so the marks show.
+		assertTrue(loot.worthMarking(28, need));
+		// Part-packed with little room left still shows what remains.
+		Packing half = Packing.check(VORKATH, items(ItemID.SHARK, 10, ItemID._4DOSEPRAYERRESTORE, 4), bank);
+		assertTrue(half.worthMarking(1, 2));
+		// Stackables take one slot, or none when the stack is already carried.
+		Map<Integer, Long> runes = items(ItemID.DEATHRUNE, 500, ItemID.SHARK, 3);
+		assertEquals(4, Packing.slotsNeeded(runes, Collections.emptySet(), id -> id == ItemID.DEATHRUNE));
+		assertEquals(3, Packing.slotsNeeded(runes, Collections.singleton(ItemID.DEATHRUNE), id -> id == ItemID.DEATHRUNE));
+		// Nothing to take is never marked.
+		Packing done = Packing.check(VORKATH, items(ItemID.SHARK, 10, ItemID._4DOSEPRAYERRESTORE, 4,
+			ItemID._4DOSERANGERSPOTION, 1, ItemID.SPADE, 1), bank);
+		assertFalse(done.worthMarking(28, 0));
+	}
 }
