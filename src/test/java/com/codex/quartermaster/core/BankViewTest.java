@@ -50,11 +50,18 @@ public class BankViewTest
 	@Test
 	public void aViewRememberedForTheNextVisitIsClosedToo()
 	{
-		// Bank Tags clears the open tag as the bank closes, before the Quartermaster hears of it,
-		// but keeps its name to open again next visit.
+		// Bank Tags clears the open tag once the bank has closed, but keeps its name to open again next visit.
 		assertTrue(BankView.shouldClose(null, BankView.TAG));
 		assertTrue(BankView.shouldClose(BankView.TAG, ""));
 		assertFalse(BankView.shouldClose("vorkath", "vorkath"));
 		assertFalse(BankView.shouldClose(null, null));
+	}
+
+	@Test
+	public void closingTheViewGivesThePlayerTheirOwnTabBack()
+	{
+		assertEquals("vorkath", BankView.tabAfterClose("vorkath"));
+		assertEquals("pressed from the main bank", "", BankView.tabAfterClose(null));
+		assertEquals("", BankView.tabAfterClose(BankView.TAG));
 	}
 }

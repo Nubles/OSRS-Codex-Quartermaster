@@ -77,6 +77,7 @@ import net.runelite.client.game.ItemManager;
 import net.runelite.client.game.ItemStats;
 import net.runelite.client.plugins.Plugin;
 import net.runelite.client.plugins.PluginDependency;
+import net.runelite.client.plugins.bank.BankSearch;
 import net.runelite.client.plugins.PluginDescriptor;
 import net.runelite.client.plugins.banktags.BankTagsPlugin;
 import net.runelite.client.plugins.banktags.BankTagsService;
@@ -152,6 +153,12 @@ public class CodexQuartermasterPlugin extends Plugin
 
 	@Inject
 	private BankTagsService bankTags;
+
+	@Inject
+	private BankSearch bankSearch;
+
+	/** The player's own bank tab open when Show in bank was pressed, or null; client thread only. */
+	private String tabBefore;
 
 	/** What is still to pack, as last published; read by Bank Tags on the client thread. */
 	private BankView packView = BankView.EMPTY;
@@ -423,7 +430,10 @@ public class CodexQuartermasterPlugin extends Plugin
 		}
 		bankOpen = false;
 		// Bank Tags remembers the open tab for the next visit; the packing view lasts one visit.
-		closeView();
+		// The event comes before the bank is gone and before Bank Tags' own handler (subscribers
+		// run in class-name order), so closing now would lay out a bank that is closing: wait
+		// until it has.
+		clientThread.invokeLater(this::closeView);
 		if (!setsOut(client.getGameState()))
 		{
 			// The bank closes as the game logs out or loses its connection: that is no trip.
@@ -456,15 +466,32 @@ public class CodexQuartermasterPlugin extends Plugin
 
 	/**
 	 * Closes the bank's filtered view if it is the Quartermaster's, open now or remembered by Bank
-	 * Tags for the next visit. Bank Tags forgets the open view as the bank closes, before this hears
-	 * of it, but remembers its name for the next visit, so both are checked. Client thread only.
+	 * Tags for the next visit. Bank Tags forgets the open view once the bank has closed but
+	 * remembers its name for the next visit, so both are checked. The player's own tab from before
+	 * Show in bank comes back in its place: opened again if the bank is still open, else remembered
+	 * for the next visit. Client thread only.
 	 */
 	private void closeView()
 	{
 		String remembered = configManager.getConfiguration(BankTagsPlugin.CONFIG_GROUP, BankView.REMEMBERED_TAB_KEY);
-		if (BankView.shouldClose(bankTags.getActiveTag(), remembered))
+		String back = BankView.tabAfterClose(tabBefore);
+		// Once the view is closed, or the player has moved on to a tab of their own, there is
+		// nothing more to give back.
+		tabBefore = null;
+		if (!BankView.shouldClose(bankTags.getActiveTag(), remembered))
 		{
-			bankTags.closeBankTag();
+			return;
+		}
+		if (!back.isEmpty() && client.getWidget(InterfaceID.Bankmain.UNIVERSE) != null)
+		{
+			// As if the player pressed their own tab again.
+			bankTags.openBankTag(back, BankTagsService.OPTION_ALLOW_MODIFICATIONS);
+			return;
+		}
+		bankTags.closeBankTag();
+		if (!back.isEmpty())
+		{
+			configManager.setConfiguration(BankTagsPlugin.CONFIG_GROUP, BankView.REMEMBERED_TAB_KEY, back);
 		}
 	}
 
@@ -484,6 +511,11 @@ public class CodexQuartermasterPlugin extends Plugin
 					.build())
 				.build());
 			return;
+		}
+		String open = bankTags.getActiveTag();
+		if (!BankView.TAG.equals(open))
+		{
+			tabBefore = open;
 		}
 		bankTags.openBankTag(BankView.TAG, BankTagsService.OPTION_NO_LAYOUT);
 	}
@@ -901,8 +933,9 @@ public class CodexQuartermasterPlugin extends Plugin
 		else if (!packView.equals(before) && BankView.TAG.equals(bankTags.getActiveTag()))
 		{
 			// The bank laid itself out before this heard of the withdrawal: lay the view out again
-			// so a supply packed in full leaves it.
-			bankTags.openBankTag(BankView.TAG, BankTagsService.OPTION_NO_LAYOUT);
+			// so a supply packed in full leaves it. Only a layout: opening the tag again would close
+			// the chat box, and with it a Withdraw-X amount the player is typing for the next supply.
+			bankSearch.layoutBank();
 		}
 		List<Trip> trips = usage == null ? Collections.emptyList() : new ArrayList<>(usage.getRecent());
 		// Every saved kit restocked together, when there are several to restock.

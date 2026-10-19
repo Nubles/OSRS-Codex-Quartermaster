@@ -72,6 +72,19 @@ public final class BankView
 		return TAG.equals(active) || TAG.equals(remembered);
 	}
 
+	/**
+	 * The tab to give the player back once the packing view closes: the one they had open before
+	 * pressing Show in bank, so a look at what is left to pack does not cost them their own tab.
+	 * Bank Tags itself would forget it, since opening a view replaces it.
+	 *
+	 * @param before the tag open when Show in bank was pressed, or null for the main bank
+	 * @return the tag to go back to, or empty for the main bank
+	 */
+	public static String tabAfterClose(String before)
+	{
+		return before == null || TAG.equals(before) ? "" : before;
+	}
+
 	/** @param itemId a bank item's id, noted and placeholder forms folded in */
 	public boolean contains(int itemId)
 	{
