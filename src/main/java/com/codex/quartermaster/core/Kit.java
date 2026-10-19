@@ -73,6 +73,26 @@ public class Kit
 		return false;
 	}
 
+	/** @return whether the amount changed; 0 marks the supply as coming back every trip */
+	boolean setAmount(String supply, int perTrip)
+	{
+		for (int i = 0; i < needs.size(); i++)
+		{
+			Need n = needs.get(i);
+			if (n.getSupply().equals(supply) && n.getPerTrip() != perTrip && perTrip >= 0)
+			{
+				needs.set(i, new Need(supply, perTrip));
+				return true;
+			}
+		}
+		return false;
+	}
+
+	void setName(String name)
+	{
+		this.name = name;
+	}
+
 	/** Drops a supply from a saved kit, for things that were carried but are not supplies. */
 	public boolean remove(String supply)
 	{

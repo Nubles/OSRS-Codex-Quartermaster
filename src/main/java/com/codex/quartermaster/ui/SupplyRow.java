@@ -56,7 +56,7 @@ class SupplyRow extends JComponent
 		}
 		if (editable)
 		{
-			tip.append("<br><i>Right-click to remove it from this kit</i>");
+			tip.append("<br><i>Right-click to set its amount or remove it</i>");
 		}
 		setToolTipText(tip.append("</html>").toString());
 	}

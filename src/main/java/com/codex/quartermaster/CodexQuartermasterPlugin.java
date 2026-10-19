@@ -7,6 +7,7 @@ import com.codex.quartermaster.core.Plan;
 import com.codex.quartermaster.core.Prices;
 import com.codex.quartermaster.core.Quarters;
 import com.codex.quartermaster.core.Reminder;
+import com.codex.quartermaster.core.Returns;
 import com.codex.quartermaster.core.SharedBank;
 import com.codex.quartermaster.core.Trip;
 import com.codex.quartermaster.core.Tuning;
@@ -812,6 +813,15 @@ public class CodexQuartermasterPlugin extends Plugin
 				line.getBuys().forEach(b -> name(b.getItemId()));
 			}
 		}
+		Map<String, Returns> returns = new HashMap<>();
+		for (Kit k : quarters.allKits())
+		{
+			Usage u = quarters.usage(k.getId());
+			if (u != null)
+			{
+				returns.put(k.getId(), Returns.of(u.getRecent()));
+			}
+		}
 		List<Tuning.Advice> tuning = Tuning.of(active, usage, carried, quarters.getBank());
 		tuning.forEach(a -> name(a.getItem()));
 		Player player = client.getLocalPlayer();
@@ -821,6 +831,7 @@ public class CodexQuartermasterPlugin extends Plugin
 			.bankFrom(quarters.getBankFrom())
 			.all(all, active.isPreset() && active.getId().equals(quarters.chosenKitId()))
 			.tuning(tuning)
+			.returns(returns)
 			.ironman(ironman())
 			.packing(packAtBank ? packing : null, usage == null ? 0 : usage.typicalDuration());
 
@@ -967,6 +978,56 @@ public class CodexQuartermasterPlugin extends Plugin
 				unsaved = true;
 				save();
 				publish();
+			});
+		}
+
+		@Override
+		public void rename(String kitId, String current)
+		{
+			Object answer = JOptionPane.showInputDialog(panel, "A new name for this kit:", "Rename kit",
+				JOptionPane.PLAIN_MESSAGE, null, null, current);
+			if (answer == null || answer.toString().trim().isEmpty())
+			{
+				return;
+			}
+			String name = answer.toString();
+			clientThread.invokeLater(() ->
+			{
+				if (quarters != null && quarters.rename(kitId, name))
+				{
+					unsaved = true;
+					save();
+					publish();
+				}
+			});
+		}
+
+		@Override
+		public void amount(String kitId, String supply, String label, int current)
+		{
+			Object answer = JOptionPane.showInputDialog(panel, "<html>" + label + " a trip takes.<br>Enter 0 when it comes back every trip.</html>",
+				"Set the amount", JOptionPane.PLAIN_MESSAGE, null, null, String.valueOf(current));
+			if (answer == null)
+			{
+				return;
+			}
+			int amount;
+			try
+			{
+				amount = Integer.parseInt(answer.toString().trim().replace(",", ""));
+			}
+			catch (NumberFormatException e)
+			{
+				return;
+			}
+			clientThread.invokeLater(() ->
+			{
+				if (quarters != null && quarters.setAmount(kitId, supply, amount))
+				{
+					unsaved = true;
+					save();
+					publish();
+				}
 			});
 		}
 

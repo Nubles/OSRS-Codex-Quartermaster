@@ -1,6 +1,7 @@
 package com.codex.quartermaster.ui;
 
 import com.codex.quartermaster.core.Plan;
+import com.codex.quartermaster.core.Returns;
 import java.awt.BorderLayout;
 import java.awt.Color;
 import java.awt.Dimension;
@@ -16,6 +17,12 @@ import javax.swing.border.EmptyBorder;
 class KitCard extends Card
 {
 	KitCard(Plan plan, View view, boolean chosen, Runnable choose, Runnable forget)
+	{
+		this(plan, view, chosen, choose, forget, null);
+	}
+
+	/** @param rename asks for a new name, or null for a kit that keeps its own */
+	KitCard(Plan plan, View view, boolean chosen, Runnable choose, Runnable forget, Runnable rename)
 	{
 		super(new BorderLayout(0, 6));
 		setBorder(new EmptyBorder(7, 12, 7, 10));
@@ -37,15 +44,33 @@ class KitCard extends Card
 		{
 			note = view.name(first) + " first";
 		}
-		add(new Face(plan.getKit().getName(), note,
+		JPanel body = new JPanel(new BorderLayout(0, 2));
+		body.setOpaque(false);
+		body.add(new Face(plan.getKit().getName(), note,
 			trips == Plan.UNLIMITED ? "-" : Format.trips(trips), color, chosen), BorderLayout.CENTER);
+		Returns returns = view.returns.get(plan.getKit().getId());
+		if (returns != null && returns.isKnown())
+		{
+			// What the kit's trips earn: loot home less the supplies they burn.
+			long hour = returns.netPerHour();
+			body.add(Ui.label("Earns " + Format.signed(hour) + " an hour, " + Format.signed(returns.netPerTrip()) + " a trip",
+				Theme.small(), hour >= 0 ? Theme.GREEN : Theme.EMBER), BorderLayout.SOUTH);
+		}
+		add(body, BorderLayout.CENTER);
 		// Chosen by clicking anywhere but the forget button, which is added after so it keeps its own clicks.
 		onClick(choose);
-		if (forget != null)
+		if (forget != null || rename != null)
 		{
-			JPanel row = new JPanel(new FlowLayout(FlowLayout.RIGHT, 0, 0));
+			JPanel row = new JPanel(new FlowLayout(FlowLayout.RIGHT, 6, 0));
 			row.setOpaque(false);
-			row.add(new CodexButton("Forget this kit", false, forget));
+			if (rename != null)
+			{
+				row.add(new CodexButton("Rename", false, rename));
+			}
+			if (forget != null)
+			{
+				row.add(new CodexButton("Forget", false, forget));
+			}
 			add(row, BorderLayout.SOUTH);
 		}
 	}

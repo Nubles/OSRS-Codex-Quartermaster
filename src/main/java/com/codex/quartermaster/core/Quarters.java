@@ -311,6 +311,66 @@ public class Quarters
 		return false;
 	}
 
+	/** The longest name a kit keeps. */
+	public static final int NAME_MAX = 32;
+	/** The most a kit can plan to use of one supply a trip. */
+	public static final int AMOUNT_MAX = 100_000;
+
+	/**
+	 * Renames a saved kit. Presets keep their names.
+	 *
+	 * @return whether the name changed
+	 */
+	public boolean rename(String kitId, String name)
+	{
+		String clean = name == null ? "" : name.trim();
+		if (clean.length() > NAME_MAX)
+		{
+			clean = clean.substring(0, NAME_MAX).trim();
+		}
+		for (Kit k : kits)
+		{
+			if (k.getId().equals(kitId) && !clean.isEmpty() && !clean.equals(k.getName()))
+			{
+				k.setName(clean);
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/**
+	 * Sets what a saved kit plans to use of one supply a trip, in the supply's own unit (hitpoints
+	 * for food, doses for potions, items otherwise). Zero marks it as coming back every trip.
+	 * Trips already measured keep what they set out with, as with tuning.
+	 *
+	 * @return whether the amount changed
+	 */
+	public boolean setAmount(String kitId, String supply, int perTrip)
+	{
+		if (perTrip < 0 || perTrip > AMOUNT_MAX)
+		{
+			return false;
+		}
+		for (Kit k : kits)
+		{
+			if (k.getId().equals(kitId))
+			{
+				Need was = k.need(supply);
+				Usage trips = usage.get(kitId);
+				if (was != null && trips != null)
+				{
+					for (Trip t : trips.getRecent())
+					{
+						t.tookAtLeast(supply, was.getPerTrip());
+					}
+				}
+				return k.setAmount(supply, perTrip);
+			}
+		}
+		return false;
+	}
+
 	/** Drops a supply from a saved kit, such as a tool that was carried but is not used up. */
 	public boolean drop(String kitId, String supply)
 	{
@@ -478,7 +538,7 @@ public class Quarters
 		{
 			return null;
 		}
-		Trip trip = new Trip(began, now, used, took, cost);
+		Trip trip = new Trip(began, now, used, took, cost).loot(Returns.loot(kit, start, carried, prices));
 		usageOrNew(kit.getId()).record(kit, trip);
 		return trip;
 	}

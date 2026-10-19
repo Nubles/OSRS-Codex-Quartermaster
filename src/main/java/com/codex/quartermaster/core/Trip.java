@@ -12,6 +12,8 @@ public class Trip
 	/** What each supply set out with; absent on trips measured before it was kept. */
 	private Map<String, Long> took;
 	private long cost;
+	/** What came back that did not set out, at the prices of its day; absent on trips from before it was kept. */
+	private Long loot;
 
 	public Trip()
 	{
@@ -66,6 +68,24 @@ public class Trip
 	public long getCost()
 	{
 		return cost;
+	}
+
+	/** The trip's loot, or null for a trip measured before loot was kept. */
+	public Long getLoot()
+	{
+		return loot;
+	}
+
+	Trip loot(long loot)
+	{
+		this.loot = loot;
+		return this;
+	}
+
+	/** Loot less supplies, or null when the loot is not known. */
+	public Long net()
+	{
+		return loot == null ? null : loot - cost;
 	}
 
 	public long duration()

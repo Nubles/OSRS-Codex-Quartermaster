@@ -2,6 +2,7 @@ package com.codex.quartermaster.ui;
 
 import com.codex.quartermaster.core.Packing;
 import com.codex.quartermaster.core.Plan;
+import com.codex.quartermaster.core.Returns;
 import com.codex.quartermaster.core.Supply;
 import com.codex.quartermaster.core.Trip;
 import com.codex.quartermaster.core.Tuning;
@@ -45,6 +46,8 @@ public final class View
 	boolean chosenPreset;
 	/** How the chosen saved kit's amounts should change, from its trips; empty when they are fine. */
 	List<Tuning.Advice> tuning = Collections.emptyList();
+	/** What each kit's trips bring back, by kit id; a kit with no trips is absent. */
+	Map<String, Returns> returns = Collections.emptyMap();
 
 	/**
 	 * @param active the chosen kit's plan, or null when no account is open
@@ -89,6 +92,13 @@ public final class View
 	public View bankFrom(String plugin)
 	{
 		bankFrom = plugin;
+		return this;
+	}
+
+	/** @param returns what each kit's trips bring back, by kit id */
+	public View returns(Map<String, Returns> returns)
+	{
+		this.returns = returns == null ? Collections.emptyMap() : returns;
 		return this;
 	}
 

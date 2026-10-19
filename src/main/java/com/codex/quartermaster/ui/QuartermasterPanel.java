@@ -1,7 +1,9 @@
 package com.codex.quartermaster.ui;
 
 import com.codex.quartermaster.core.Packing;
+import com.codex.quartermaster.core.Need;
 import com.codex.quartermaster.core.Plan;
+import com.codex.quartermaster.core.Returns;
 import com.codex.quartermaster.core.Planner;
 import com.codex.quartermaster.core.Supplies;
 import com.codex.quartermaster.core.Supply;
@@ -44,6 +46,8 @@ public class QuartermasterPanel extends PluginPanel
 	private static final String[] TABS = {"supplies", "restock", "kits"};
 	private static final int[] TARGETS = {5, 10, 25, 50, 100};
 	private static final int RECENT = 5;
+	/** The presets are unfolded on the Kits page. */
+	private boolean presetsOpen;
 	private static final Map<String, String> SHORT = new HashMap<>();
 
 	static
@@ -264,6 +268,17 @@ public class QuartermasterPanel extends PluginPanel
 				measured ? "trips learned" : view.measured == 1 ? "1 trip so far" : "make a trip", measured ? Theme.TEAL : Theme.TEXT_MUTED));
 		}
 		stack.add(tiles);
+		Returns returns = Returns.of(view.trips);
+		if (returns.isKnown())
+		{
+			// What the trips bring home against what they burn, at today's prices.
+			JPanel earn = new JPanel(new GridLayout(1, 2, 6, 0));
+			earn.setOpaque(false);
+			long hour = returns.netPerHour();
+			earn.add(new StatTile(Format.coins(returns.lootPerTrip()), "Loot a trip", "net " + Format.signed(returns.netPerTrip()), Theme.GOLD));
+			earn.add(new StatTile(Format.signed(hour), "Net an hour", "after supplies", hour >= 0 ? Theme.GREEN : Theme.EMBER));
+			stack.add(earn);
+		}
 
 		stack.add(new SectionHeader("Supplies", plan.getKit().getName()));
 		Card list = new Card(new BorderLayout());
@@ -271,7 +286,8 @@ public class QuartermasterPanel extends PluginPanel
 		List<Plan.Line> lines = new ArrayList<>(plan.getLines());
 		lines.sort((a, b) -> Integer.compare(a.getTrips(), b.getTrips()));
 		Plan.Line first = plan.limiting();
-		boolean editable = !plan.getKit().isPreset() && plan.getKit().getNeeds().size() > 1;
+		boolean editable = !plan.getKit().isPreset();
+		boolean removable = editable && plan.getKit().getNeeds().size() > 1;
 		for (Plan.Line line : lines)
 		{
 			SupplyRow row = new SupplyRow(line, view, plan.getTarget(), line == first, icons, editable);
@@ -280,9 +296,18 @@ public class QuartermasterPanel extends PluginPanel
 				String kitId = plan.getKit().getId();
 				String key = line.getSupply().getKey();
 				JPopupMenu menu = new JPopupMenu();
-				JMenuItem remove = new JMenuItem("Remove " + view.name(line) + " from this kit");
-				remove.addActionListener(e -> actions.drop(kitId, key));
-				menu.add(remove);
+				Need need = plan.getKit().need(key);
+				String unit = View.unit(line).trim();
+				String label = view.name(line) + (unit.isEmpty() ? "" : " (" + unit + ")");
+				JMenuItem amount = new JMenuItem("Set the amount a trip takes");
+				amount.addActionListener(e -> actions.amount(kitId, key, label, need == null ? 0 : need.getPerTrip()));
+				menu.add(amount);
+				if (removable)
+				{
+					JMenuItem remove = new JMenuItem("Remove " + view.name(line) + " from this kit");
+					remove.addActionListener(e -> actions.drop(kitId, key));
+					menu.add(remove);
+				}
 				row.setComponentPopupMenu(menu);
 			}
 			rows.add(row);
@@ -305,7 +330,8 @@ public class QuartermasterPanel extends PluginPanel
 			{
 				sum += t.getCost();
 			}
-			stack.add(new SectionHeader("Recent trips", "avg " + Format.coins(sum / view.trips.size())));
+			stack.add(new SectionHeader("Recent trips", returns.isKnown() ? "net " + Format.signed(returns.netPerTrip())
+				: "avg " + Format.coins(sum / view.trips.size())));
 			Card recent = new Card(new BorderLayout());
 			StackPanel tripRows = new StackPanel(4, 0);
 			for (int i = view.trips.size() - 1; i >= 0 && i >= view.trips.size() - RECENT; i--)
@@ -659,17 +685,41 @@ public class QuartermasterPanel extends PluginPanel
 				}
 				String id = plan.getKit().getId();
 				boolean chosen = id.equals(view.active.getKit().getId());
-				stack.add(new KitCard(plan, view, chosen, () -> actions.choose(id), chosen ? () -> actions.forget(id) : null));
+				String name = plan.getKit().getName();
+				stack.add(new KitCard(plan, view, chosen, () -> actions.choose(id), chosen ? () -> actions.forget(id) : null,
+					chosen ? () -> actions.rename(id, name) : null));
 			}
 		}
-		stack.add(new SectionHeader("Presets"));
+		int presets = 0;
+		for (Plan plan : view.plans)
+		{
+			presets += plan.getKit().isPreset() ? 1 : 0;
+		}
+		stack.add(new SectionHeader("Presets", String.valueOf(presets)));
+		// With kits of their own, the presets fold away to the one in use, a click from the rest.
+		boolean folded = anySaved && !presetsOpen;
 		for (Plan plan : view.plans)
 		{
 			if (plan.getKit().isPreset())
 			{
 				String id = plan.getKit().getId();
-				stack.add(new KitCard(plan, view, id.equals(view.active.getKit().getId()), () -> actions.choose(id), null));
+				boolean chosen = id.equals(view.active.getKit().getId());
+				if (!folded || chosen)
+				{
+					stack.add(new KitCard(plan, view, chosen, () -> actions.choose(id), null));
+				}
 			}
+		}
+		if (anySaved)
+		{
+			JPanel more = new JPanel(new FlowLayout(FlowLayout.LEFT, 0, 0));
+			more.setOpaque(false);
+			more.add(new CodexButton(folded ? "Show all " + presets + " presets" : "Fold the presets", false, () ->
+			{
+				presetsOpen = !presetsOpen;
+				rebuildKits();
+			}));
+			stack.add(more);
 		}
 		replace(kits, stack);
 	}
