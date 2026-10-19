@@ -10,6 +10,7 @@ import com.codex.quartermaster.core.Prices;
 import com.codex.quartermaster.core.Quarters;
 import com.codex.quartermaster.core.Reminder;
 import com.codex.quartermaster.core.Returns;
+import com.codex.quartermaster.core.Salvage;
 import com.codex.quartermaster.core.SharedBank;
 import com.codex.quartermaster.core.Trip;
 import com.codex.quartermaster.core.Tuning;
@@ -100,6 +101,10 @@ public class CodexQuartermasterPlugin extends Plugin
 {
 	private static final Logger log = LoggerFactory.getLogger(CodexQuartermasterPlugin.class);
 	private static final String QUARTERS_KEY = "quarters";
+	/** Where a save this version could not keep whole is put aside, once, before it is written over. */
+	private static final String BACKUP_KEY = "quartersBackup";
+	/** Past this a save is far bigger than any the Quartermaster writes, and is not copied aside. */
+	private static final int BACKUP_MAX = 1_000_000;
 	/** Ticks between saves while something has changed. */
 	private static final int SAVE_TICKS = 50;
 	/** Ticks between recounts at today's prices, about a minute. */
@@ -805,7 +810,15 @@ public class CodexQuartermasterPlugin extends Plugin
 		{
 			return;
 		}
-		quarters = Quarters.read(gson, configManager.getRSProfileConfiguration(CodexQuartermasterConfig.GROUP, QUARTERS_KEY));
+		String saved = configManager.getRSProfileConfiguration(CodexQuartermasterConfig.GROUP, QUARTERS_KEY);
+		quarters = Quarters.read(gson, saved);
+		if (saved != null && saved.length() <= BACKUP_MAX && Salvage.wouldLose(gson, saved, quarters))
+		{
+			// A newer version's fields, or damage mended on reading: the next save would write over
+			// them, so the save as found is kept aside first.
+			log.warn("The saved quarters hold what this version cannot keep; a copy is kept under {}", BACKUP_KEY);
+			configManager.setConfiguration(CodexQuartermasterConfig.GROUP, profile, BACKUP_KEY, saved);
+		}
 		lastBook = configManager.getRSProfileConfiguration(CodexQuartermasterConfig.GROUP, KitBook.KEY);
 		// Saves from before the kit book existed get one at the next save.
 		unsaved = lastBook == null;

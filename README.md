@@ -66,7 +66,7 @@ The Quartermaster saves your kits in a stable shape for others to read. Codex Ba
 
 Supplies that stand in for one another are pooled. Food counts in hitpoints healed, so a shark is 20 and a manta ray 22. Prayer potions, super restores and sanfew serums count as prayer doses, and ranging, divine ranging and bastion potions as ranging doses. Magic, super combat, antifire, anti-venom, stamina and Saradomin brews work the same way. Enchanted ruby and diamond dragon bolts count together. Anything else a saved kit carries counts as its own item, including the runes in a rune pouch.
 
-Your bank is read whenever it is open and remembered as last seen, so the panel works anywhere. Potion storage counts too. What you carry is added: inventory, worn gear, rune pouch and the ammo in Dizana's quiver. Prices are RuneLite's Grand Exchange prices. Everything is saved per account in your RuneLite profile. A save damaged on disk keeps all it can: one unreadable kit or setting is lost alone.
+Your bank is read whenever it is open and remembered as last seen, so the panel works anywhere. Potion storage counts too. What you carry is added: inventory, worn gear, rune pouch and the ammo in Dizana's quiver. Prices are RuneLite's Grand Exchange prices. Everything is saved per account in your RuneLite profile. A save damaged on disk keeps all it can: one unreadable kit or setting is lost alone. Before a damaged save, or one a newer version wrote, is first saved over, a copy of it as found is kept aside in your profile.
 
 Preset amounts are a typical trip of several kills. They are only a starting point until your own trips are measured.
 
