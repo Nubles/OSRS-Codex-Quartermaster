@@ -65,4 +65,17 @@ public class LoadoutTest
 		Loadout l = Loadout.of(kit("FOOD", 40), null, STACKS);
 		assertEquals(2, l.getSlots().size());
 	}
+
+	@Test
+	public void aTripTheBankFallsShortOfIsMadeUpFaded()
+	{
+		// 200 hp of food with three sharks banked: the three, then seven more sharks faded.
+		Loadout l = Loadout.of(kit("FOOD", 200), items(ItemID.SHARK, 3), STACKS);
+		assertEquals(10, l.getSlots().size());
+		for (int i = 0; i < 10; i++)
+		{
+			assertEquals(ItemID.SHARK, l.getSlots().get(i).getItemId());
+			assertEquals("slot " + i, i < 3, l.getSlots().get(i).isBanked());
+		}
+	}
 }

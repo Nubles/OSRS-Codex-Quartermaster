@@ -82,25 +82,34 @@ public final class Loadout
 		for (Packing.Item item : packing.getItems())
 		{
 			Supply supply = item.getSupply();
-			Map<Integer, Long> take = item.getWithdraw();
-			boolean banked = !take.isEmpty();
-			if (!banked)
+			Map<Integer, Long> withdraw = item.getWithdraw();
+			// What the bank holds toward a trip, then the supply's usual item, faded, for any of the
+			// trip it cannot make up, so a kit the bank runs short of still looks short.
+			List<Slot> take = new ArrayList<>();
+			long covered = 0;
+			for (Map.Entry<Integer, Long> e : withdraw.entrySet())
 			{
-				// None banked: the supply's usual item, as many as make up a trip.
+				take.add(new Slot(e.getKey(), e.getValue(), true));
+				Integer per = supply.getUnits().get(e.getKey());
+				covered += e.getValue() * (per == null ? 1 : per);
+			}
+			long missing = item.getTarget() - covered;
+			if (withdraw.isEmpty() || missing > 0)
+			{
 				int id = supply.getIcon();
 				Integer per = supply.getUnits().get(id);
-				long count = per == null || per <= 0 ? item.getTarget() : (item.getTarget() + per - 1) / per;
-				take = Collections.singletonMap(id, Math.max(1, count));
+				take.add(new Slot(id, per == null || per <= 0 ? missing : (missing + per - 1) / per, false));
 			}
-			for (Map.Entry<Integer, Long> e : take.entrySet())
+			for (Slot e : take)
 			{
-				int id = e.getKey();
-				long count = Math.max(1, e.getValue());
+				int id = e.itemId;
+				boolean inBank = e.banked;
+				long count = Math.max(1, e.quantity);
 				if (stackable.test(id))
 				{
 					if (slots.size() < SLOTS)
 					{
-						slots.add(new Slot(id, count, banked));
+						slots.add(new Slot(id, count, inBank));
 					}
 					else
 					{
@@ -112,7 +121,7 @@ public final class Loadout
 				{
 					if (slots.size() < SLOTS)
 					{
-						slots.add(new Slot(id, 1, banked));
+						slots.add(new Slot(id, 1, inBank));
 					}
 					else
 					{
