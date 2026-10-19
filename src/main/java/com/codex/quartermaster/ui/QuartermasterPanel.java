@@ -632,7 +632,7 @@ public class QuartermasterPanel extends PluginPanel
 			{
 				rows.add(new BuyRow(buy.getItemId(), view.name(buy.getItemId()),
 					String.format(Locale.ENGLISH, "%,d", buy.getQuantity()) + " at " + Format.coins(buy.getPrice()) + " ea",
-					Format.coins(buy.getCost()), Theme.GOLD, icons));
+					Format.coins(buy.getCost()), "gp", Theme.GOLD, icons));
 			}
 			list.add(rows, BorderLayout.CENTER);
 			stack.add(list);

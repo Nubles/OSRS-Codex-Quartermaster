@@ -14,6 +14,8 @@ class BuyRow extends JComponent
 	private final String name;
 	private final String note;
 	private final String amount;
+	/** A unit set small after the amount, such as "gp", or null. */
+	private final String unit;
 	private final Color color;
 	private final ItemIcons icons;
 	/** Handed over each time an icon is asked for, so a row waiting on a picture is told once. */
@@ -21,10 +23,16 @@ class BuyRow extends JComponent
 
 	BuyRow(int itemId, String name, String note, String amount, Color color, ItemIcons icons)
 	{
+		this(itemId, name, note, amount, null, color, icons);
+	}
+
+	BuyRow(int itemId, String name, String note, String amount, String unit, Color color, ItemIcons icons)
+	{
 		this.itemId = itemId;
 		this.name = name;
 		this.note = note;
 		this.amount = amount;
+		this.unit = unit;
 		this.color = color;
 		this.icons = icons;
 		setOpaque(false);
@@ -57,10 +65,21 @@ class BuyRow extends JComponent
 		}
 		int low = 2 + Well.SIZE - 5;
 		int aw = fm.stringWidth(amount);
-		Ui.shadowed(g, amount, w - aw, low, color);
+		g.setFont(Theme.small());
+		int uw = unit == null ? 0 : g.getFontMetrics().stringWidth(unit) + 3;
+		if (unit != null)
+		{
+			Ui.shadowed(g, unit, w - uw + 3, low, Theme.TEXT_MUTED);
+		}
+		g.setFont(Theme.body());
+		Ui.shadowed(g, amount, w - aw - uw, low, color);
+		aw += uw;
 		g.setFont(Theme.small());
 		g.setColor(Theme.TEXT_MUTED);
-		g.drawString(Ui.clip(note, g.getFontMetrics(), w - tx - aw - 6), tx, low);
+		// A big order's "37,100 at 1,100 ea" gives up its "ea" before it is cut short.
+		int room = w - tx - aw - 6;
+		String shown = g.getFontMetrics().stringWidth(note) > room && note.endsWith(" ea") ? note.substring(0, note.length() - 3) : note;
+		g.drawString(Ui.clip(shown, g.getFontMetrics(), room), tx, low);
 		g.dispose();
 	}
 }
