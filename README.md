@@ -44,7 +44,7 @@ It is the seventh plugin in the **Codex** suite, after [Codex Navigator](https:/
 
 Supplies that stand in for one another are pooled. Food is counted in hitpoints healed, so a shark is 20 and a manta ray 22. Prayer potions, super restores and sanfew serums count as prayer doses; ranging, divine ranging, bastion and divine bastion potions as ranging doses; and so on for magic, super combat, antifire, anti-venom, stamina and Saradomin brews. Enchanted ruby and diamond dragon bolts count together. Anything else a saved kit carries is counted as its own item, including the runes in a rune pouch.
 
-Your bank is read whenever it is open and remembered as last seen, so the panel works anywhere. The doses in the bank's potion storage are counted with it. What you carry (inventory, worn gear, rune pouch and the ammo in Dizana's quiver) is added to it. Prices are RuneLite's Grand Exchange prices. Everything is saved per account in your RuneLite profile.
+Your bank is read whenever it is open and remembered as last seen, so the panel works anywhere. If [Codex Bank Steward](https://github.com/Nubles/OSRS-Codex-Bank-Steward) saved your bank at a visit the Quartermaster missed (it was just installed, or turned off), that newer bank is counted instead, and the panel says whose it is until you open yours. The doses in the bank's potion storage are counted with it. What you carry (inventory, worn gear, rune pouch and the ammo in Dizana's quiver) is added to it. Prices are RuneLite's Grand Exchange prices. Everything is saved per account in your RuneLite profile.
 
 Preset amounts are a typical trip of several kills, not a rule. They are only the starting point until your own trips are measured.
 

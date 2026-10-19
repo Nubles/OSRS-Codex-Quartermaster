@@ -36,6 +36,8 @@ public final class View
 	Packing packing;
 	/** How long a trip with the chosen kit usually takes, or 0 until measured. */
 	long tripMs;
+	/** The Codex plugin whose saved bank is shown, or null when the Quartermaster saw it itself. */
+	String bankFrom;
 
 	/**
 	 * @param active the chosen kit's plan, or null when no account is open
@@ -62,6 +64,12 @@ public final class View
 	public static View loggedOut()
 	{
 		return new View(State.LOGGED_OUT, null, null, null, null, 0, 0, false, null, 3, System.currentTimeMillis());
+	}
+
+	public View bankFrom(String plugin)
+	{
+		bankFrom = plugin;
+		return this;
 	}
 
 	public View ironman(boolean value)

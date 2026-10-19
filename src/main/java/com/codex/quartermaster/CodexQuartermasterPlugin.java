@@ -6,6 +6,7 @@ import com.codex.quartermaster.core.Packing;
 import com.codex.quartermaster.core.Plan;
 import com.codex.quartermaster.core.Prices;
 import com.codex.quartermaster.core.Quarters;
+import com.codex.quartermaster.core.SharedBank;
 import com.codex.quartermaster.core.Reminder;
 import com.codex.quartermaster.core.Trip;
 import com.codex.quartermaster.core.Usage;
@@ -293,6 +294,18 @@ public class CodexQuartermasterPlugin extends Plugin
 		if (CodexQuartermasterConfig.GROUP.equals(event.getGroup()))
 		{
 			dirty = true;
+		}
+		else if (SharedBank.STEWARD_GROUP.equals(event.getGroup()) && SharedBank.STEWARD_KEY.equals(event.getKey()))
+		{
+			// Codex Bank Steward saved the bank; it only counts for the profile in hand.
+			clientThread.invokeLater(() ->
+			{
+				if (quarters != null && profile != null && profile.equals(configManager.getRSProfileKey()) && adoptSharedBank())
+				{
+					// No ticks run while logged out, so the panel is redrawn here.
+					publish();
+				}
+			});
 		}
 	}
 
@@ -689,7 +702,33 @@ public class CodexQuartermasterPlugin extends Plugin
 		lastBook = configManager.getRSProfileConfiguration(CodexQuartermasterConfig.GROUP, KitBook.KEY);
 		// Saves from before the kit book existed get one at the next save.
 		unsaved = lastBook == null;
+		adoptSharedBank();
 		dirty = true;
+	}
+
+	/**
+	 * Takes the bank Codex Bank Steward saved when it is newer than the one seen here, as when
+	 * the Quartermaster was just installed. Gear Roadmap's saved bank, the suite's fallback, holds
+	 * gear and no supplies, so counting from it would claim an empty bank: it is not used.
+	 *
+	 * @return whether the bank changed
+	 */
+	private boolean adoptSharedBank()
+	{
+		if (bankOpen)
+		{
+			return false;
+		}
+		SharedBank shared = SharedBank.read(gson,
+			configManager.getRSProfileConfiguration(SharedBank.STEWARD_GROUP, SharedBank.STEWARD_KEY),
+			configManager.getRSProfileConfiguration(SharedBank.ROADMAP_GROUP, SharedBank.ROADMAP_KEY));
+		if (quarters.adoptBank(shared, "Codex Bank Steward"))
+		{
+			unsaved = true;
+			dirty = true;
+			return true;
+		}
+		return false;
 	}
 
 	/** Writes to the profile if anything changed, and says whether it did. */
@@ -765,6 +804,7 @@ public class CodexQuartermasterPlugin extends Plugin
 		View.State state = !quarters.hasBank() ? View.State.WAITING_FOR_BANK : View.State.READY;
 		View view = new View(state, loggedIn && player != null ? player.getName() : null, chosen, plans, trips,
 			usage == null ? 0 : usage.getTrips(), quarters.getBankSeen(), bankOpen, new HashMap<>(names), config.warnTrips(), now)
+			.bankFrom(quarters.getBankFrom())
 			.ironman(ironman())
 			.packing(packAtBank ? packing : null, usage == null ? 0 : usage.typicalDuration());
 

@@ -305,7 +305,17 @@ public class QuartermasterPanel extends PluginPanel
 		}
 		if (!view.bankOpen && view.bankSeen > 0)
 		{
-			stack.add(Ui.label("Bank as last seen " + Format.ago(view.now - view.bankSeen), Theme.small(), Theme.TEXT_FAINT));
+			String seen = "Bank as last seen " + Format.ago(view.now - view.bankSeen);
+			if (view.bankFrom != null)
+			{
+				// Wrapped: the plugin's name does not fit on one line at sidebar width.
+				stack.add(Ui.wrapped(seen + ", by " + view.bankFrom + ". Open your bank to count potion storage too.",
+					Theme.small(), Theme.TEXT_FAINT, WIDTH));
+			}
+			else
+			{
+				stack.add(Ui.label(seen, Theme.small(), Theme.TEXT_FAINT));
+			}
 		}
 		replace(supplies, stack);
 	}

@@ -27,6 +27,8 @@ public class Quarters
 
 	private Map<Integer, Long> bank = new HashMap<>();
 	private long bankSeen;
+	/** The Codex plugin whose saved bank {@link #bank} was taken from, or null when seen here. */
+	private String bankFrom;
 	private List<Kit> kits = new ArrayList<>();
 	private String active;
 	private int target = DEFAULT_TARGET;
@@ -62,6 +64,39 @@ public class Quarters
 	{
 		bank = new HashMap<>(items);
 		bankSeen = now;
+		bankFrom = null;
+	}
+
+	/**
+	 * How much newer another plugin's bank must be before it replaces the one seen here. Both
+	 * plugins see the same bank visit a moment apart; only a visit this plugin missed counts.
+	 */
+	static final long ADOPT_MARGIN_MS = 60_000;
+
+	/**
+	 * Takes the bank another Codex plugin saved, when it holds everything and is clearly newer
+	 * than the bank this plugin last saw: the Quartermaster was off, or new, at that bank visit.
+	 *
+	 * @param from the plugin's name, shown with the bank's age
+	 * @return whether it was taken
+	 */
+	public boolean adoptBank(SharedBank shared, String from)
+	{
+		if (shared == null || !shared.isComplete() || shared.getSavedAt() <= 0
+			|| shared.getSavedAt() <= bankSeen + (hasBank() ? ADOPT_MARGIN_MS : 0))
+		{
+			return false;
+		}
+		bank = new HashMap<>(shared.getItems());
+		bankSeen = shared.getSavedAt();
+		bankFrom = from;
+		return true;
+	}
+
+	/** The plugin the bank was taken from, or null when the Quartermaster saw it itself. */
+	public String getBankFrom()
+	{
+		return bankFrom;
 	}
 
 	/** The doses in the bank's potion storage, read whenever the bank is open. */
