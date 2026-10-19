@@ -427,6 +427,16 @@ public class QuartermasterPanel extends PluginPanel
 			rows.add(new BuyRow(icon, name, packNote(item), amount, item.isForgotten() ? Theme.BLOOD : Theme.EMBER, icons));
 		}
 		card.add(rows, BorderLayout.CENTER);
+		if (actions != null && !packing.withdrawals().isEmpty())
+		{
+			JPanel south = new JPanel(new FlowLayout(FlowLayout.LEFT, 0, 0));
+			south.setOpaque(false);
+			south.setBorder(new EmptyBorder(6, 0, 0, 0));
+			CodexButton show = new CodexButton("Show in bank", false, actions::showInBank);
+			show.setToolTipText("Narrows the bank to what is still to take, until you close it");
+			south.add(show);
+			card.add(south, BorderLayout.SOUTH);
+		}
 		stack.add(card);
 	}
 

@@ -27,4 +27,9 @@ public interface Actions
 
 	/** Pack the amounts the trips advise for a saved kit. */
 	void tune(String kitId);
+
+	/** Show the bank filtered to what is still to pack. */
+	default void showInBank()
+	{
+	}
 }

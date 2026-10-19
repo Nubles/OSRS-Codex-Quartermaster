@@ -1,5 +1,6 @@
 package com.codex.quartermaster;
 
+import com.codex.quartermaster.core.BankView;
 import com.codex.quartermaster.core.Kit;
 import com.codex.quartermaster.core.KitBook;
 import com.codex.quartermaster.core.Packing;
@@ -67,6 +68,7 @@ import net.runelite.client.chat.ChatMessageBuilder;
 import net.runelite.client.chat.ChatMessageManager;
 import net.runelite.client.chat.QueuedMessage;
 import net.runelite.client.config.ConfigManager;
+import net.runelite.client.config.RuneLiteConfig;
 import net.runelite.client.eventbus.Subscribe;
 import net.runelite.client.events.ClientShutdown;
 import net.runelite.client.events.ConfigChanged;
@@ -74,7 +76,11 @@ import net.runelite.client.events.RuneScapeProfileChanged;
 import net.runelite.client.game.ItemManager;
 import net.runelite.client.game.ItemStats;
 import net.runelite.client.plugins.Plugin;
+import net.runelite.client.plugins.PluginDependency;
 import net.runelite.client.plugins.PluginDescriptor;
+import net.runelite.client.plugins.banktags.BankTagsPlugin;
+import net.runelite.client.plugins.banktags.BankTagsService;
+import net.runelite.client.plugins.banktags.TagManager;
 import net.runelite.client.ui.ClientToolbar;
 import net.runelite.client.ui.NavigationButton;
 import net.runelite.client.ui.overlay.OverlayManager;
@@ -87,6 +93,7 @@ import org.slf4j.LoggerFactory;
 	description = "Pick the content you are doing and see how many trips your bank supports, what runs out first and what restocking costs at Grand Exchange prices",
 	tags = {"supplies", "bank", "trips", "restock", "potions", "food", "boss", "grand exchange", "codex"}
 )
+@PluginDependency(BankTagsPlugin.class)
 public class CodexQuartermasterPlugin extends Plugin
 {
 	private static final Logger log = LoggerFactory.getLogger(CodexQuartermasterPlugin.class);
@@ -138,6 +145,16 @@ public class CodexQuartermasterPlugin extends Plugin
 
 	@Inject
 	private CodexQuartermasterConfig config;
+
+	/** RuneLite's Bank Tags, through which the bank can be shown filtered to what is still to pack. */
+	@Inject
+	private TagManager tagManager;
+
+	@Inject
+	private BankTagsService bankTags;
+
+	/** What is still to pack, as last published; read by Bank Tags on the client thread. */
+	private BankView packView = BankView.EMPTY;
 
 	private final SupplyPlaque plaque = new SupplyPlaque();
 	private WithdrawOverlay withdrawOverlay;
@@ -199,12 +216,18 @@ public class CodexQuartermasterPlugin extends Plugin
 		overlayManager.add(plaque);
 		withdrawOverlay = new WithdrawOverlay(itemManager);
 		overlayManager.add(withdrawOverlay);
+		packView = BankView.EMPTY;
+		tagManager.registerTag(BankView.TAG, id -> packView.contains(itemManager.canonicalize(id)));
 		clientThread.invokeLater(() ->
 		{
 			loadProfile();
 			if (client.getGameState() == GameState.LOGGED_IN)
 			{
 				carried = readCarried();
+				// Turned on with the bank already open: its opening was missed, but it is open.
+				Widget open = client.getWidget(InterfaceID.Bankmain.UNIVERSE);
+				bankOpen = open != null && !open.isHidden();
+				readStorage = bankOpen;
 				ItemContainer bank = client.getItemContainer(InventoryID.BANK);
 				if (bank != null && quarters != null)
 				{
@@ -223,8 +246,12 @@ public class CodexQuartermasterPlugin extends Plugin
 		overlayManager.remove(withdrawOverlay);
 		withdrawOverlay.show(null);
 		clientToolbar.removeNavigation(navButton);
+		tagManager.unregisterTag(BankView.TAG);
 		clientThread.invokeLater(() ->
 		{
+			// A view left open would show an empty bank with the Quartermaster gone.
+			closeView();
+			packView = BankView.EMPTY;
 			save();
 			quarters = null;
 			profile = null;
@@ -281,6 +308,12 @@ public class CodexQuartermasterPlugin extends Plugin
 	public void onRuneScapeProfileChanged(RuneScapeProfileChanged event)
 	{
 		save();
+		if (configManager.getRSProfileKey() == null)
+		{
+			// Logging out can leave no profile until the next login. The account's quarters stay in
+			// hand, saved, so the panel still counts its bank as last seen.
+			return;
+		}
 		loadProfile();
 		bankOpen = false;
 		storageGrace = 0;
@@ -384,6 +417,15 @@ public class CodexQuartermasterPlugin extends Plugin
 			return;
 		}
 		bankOpen = false;
+		// Bank Tags remembers the open tab for the next visit; the packing view lasts one visit.
+		closeView();
+		if (!setsOut(client.getGameState()))
+		{
+			// The bank closes as the game logs out or loses its connection: that is no trip.
+			openedWith = null;
+			dirty = true;
+			return;
+		}
 		// A withdrawal made just before closing reaches the storage varps a tick later.
 		storageGrace = 2;
 		carried = readCarried();
@@ -396,6 +438,44 @@ public class CodexQuartermasterPlugin extends Plugin
 		remind();
 		openedWith = null;
 		dirty = true;
+	}
+
+	/**
+	 * Whether the bank closing in this state sets out on a trip: in play, or hopping or loading a
+	 * new area on the way. Logging out or losing the connection closes it too, and that is no trip.
+	 */
+	static boolean setsOut(GameState state)
+	{
+		return state == GameState.LOGGED_IN || state == GameState.HOPPING || state == GameState.LOADING;
+	}
+
+	/** Closes the bank's filtered view if it is the Quartermaster's. Client thread only. */
+	private void closeView()
+	{
+		if (BankView.TAG.equals(bankTags.getActiveTag()))
+		{
+			bankTags.closeBankTag();
+		}
+	}
+
+	/** Shows the bank filtered to what is still to pack, or says in the chat box why it cannot. */
+	private void showInBank()
+	{
+		// Bank Tags is on unless turned off, the way RuneLite itself decides it.
+		boolean tagsOn = !"false".equals(configManager.getConfiguration(RuneLiteConfig.GROUP_NAME, "banktagsplugin"));
+		BankView.Refusal refusal = packView.refusal(bankOpen && client.getGameState() == GameState.LOGGED_IN, tagsOn);
+		if (refusal != null)
+		{
+			chatMessageManager.queue(QueuedMessage.builder()
+				.type(ChatMessageType.CONSOLE)
+				.runeLiteFormattedMessage(new ChatMessageBuilder()
+					.append(ChatColorType.HIGHLIGHT).append("Codex Quartermaster: ")
+					.append(ChatColorType.NORMAL).append(BankView.explain(refusal))
+					.build())
+				.build());
+			return;
+		}
+		bankTags.openBankTag(BankView.TAG, BankTagsService.OPTION_NO_LAYOUT);
 	}
 
 	@Subscribe
@@ -801,6 +881,12 @@ public class CodexQuartermasterPlugin extends Plugin
 		boolean packAtBank = loggedIn && bankOpen && packing != null && !packing.getItems().isEmpty() && config.packCheck();
 		withdrawOverlay.show(loggedIn && bankOpen && packing != null && config.highlightBank() && packingNow(packing)
 			? packing.withdrawals() : null);
+		packView = loggedIn && bankOpen ? BankView.of(packing) : BankView.EMPTY;
+		if (packView.isEmpty())
+		{
+			// Packed: the whole bank comes back.
+			closeView();
+		}
 		List<Trip> trips = usage == null ? Collections.emptyList() : new ArrayList<>(usage.getRecent());
 		// Every saved kit restocked together, when there are several to restock.
 		Plan all = null;
@@ -1029,6 +1115,12 @@ public class CodexQuartermasterPlugin extends Plugin
 					publish();
 				}
 			});
+		}
+
+		@Override
+		public void showInBank()
+		{
+			clientThread.invokeLater(CodexQuartermasterPlugin.this::showInBank);
 		}
 
 		@Override
