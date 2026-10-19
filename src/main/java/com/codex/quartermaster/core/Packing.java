@@ -2,9 +2,11 @@ package com.codex.quartermaster.core;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * Whether what is carried is a full kit: each supply against what the kit packs for one trip,
@@ -144,9 +146,10 @@ public final class Packing
 	}
 
 	/**
-	 * Which bank items make up a shortfall. The form already carried comes first, so a player
-	 * packing sharks is pointed at more sharks; then full forms, most held first, so 4-dose potions
-	 * come before a stray 1-dose; then anything else that counts.
+	 * Which bank items make up a shortfall. What is already carried comes first, so a player
+	 * packing sharks is pointed at more sharks and one packing super restores at more of those;
+	 * within that, full forms, most held first, so 4-dose potions come before a stray 1-dose;
+	 * then anything else that counts.
 	 */
 	static Map<Integer, Long> withdraw(Supply supply, long missing, Map<Integer, Long> carried, Map<Integer, Long> bank)
 	{
@@ -158,10 +161,20 @@ public final class Packing
 				forms.add(id);
 			}
 		}
+		// The potions or food already carried, by full form, so a leftover 1-dose prayer potion
+		// points at 4-dose prayer potions rather than at other leftovers.
+		Set<Integer> families = new HashSet<>();
+		for (int id : supply.getUnits().keySet())
+		{
+			if (carried.getOrDefault(id, 0L) > 0)
+			{
+				families.add(supply.fullForm(id));
+			}
+		}
 		forms.sort((a, b) ->
 		{
-			boolean ca = carried.getOrDefault(a, 0L) > 0;
-			boolean cb = carried.getOrDefault(b, 0L) > 0;
+			boolean ca = families.contains(supply.fullForm(a));
+			boolean cb = families.contains(supply.fullForm(b));
 			if (ca != cb)
 			{
 				return ca ? -1 : 1;

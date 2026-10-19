@@ -185,4 +185,16 @@ public class PackingTest
 		assertTrue(prayer.getWithdraw().isEmpty());
 		assertEquals(40, prayer.getInStorage());
 	}
+
+	@Test
+	public void aLeftoverDoseDoesNotSteerTowardOtherLeftovers()
+	{
+		// Back from a trip with a 1-dose prayer potion: take 4-dose ones, not the bank's stray 1-doses.
+		Map<Integer, Long> bank = items(ItemID._1DOSEPRAYERRESTORE, 3, ItemID._4DOSEPRAYERRESTORE, 40);
+		Packing p = Packing.check(kit("PRAYER", 16), items(ItemID._1DOSEPRAYERRESTORE, 1), bank);
+		Map<Integer, Long> w = p.withdrawals();
+		assertEquals(Integer.valueOf(ItemID._4DOSEPRAYERRESTORE), w.keySet().iterator().next());
+		assertEquals(Long.valueOf(4), w.get(ItemID._4DOSEPRAYERRESTORE));
+		assertNull(w.get(ItemID._1DOSEPRAYERRESTORE));
+	}
 }
