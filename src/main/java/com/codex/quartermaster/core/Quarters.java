@@ -126,6 +126,15 @@ public class Quarters
 		return k != null ? k : allKits().get(0);
 	}
 
+	/**
+	 * The kit the player chose, or null when none is: then the panel shows the first kit, but
+	 * that is only a default, not the player's choice.
+	 */
+	public String chosenKitId()
+	{
+		return active != null && kit(active) != null ? active : null;
+	}
+
 	public void select(String id)
 	{
 		if (kit(id) != null)

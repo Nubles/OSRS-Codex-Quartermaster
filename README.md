@@ -71,9 +71,10 @@ Other plugins, Codex ones first, can read your kits without copying Quartermaste
 }
 ```
 
+- `active` is the kit you chose, saved or preset. It is left out when you have chosen none (a fresh install), even though the panel then shows the first preset. Saves from before this rule always named a kit, so a reader that must tell the two apart can also check the older `quarters` entry's `active`, which has only ever named a chosen kit.
 - `kits` holds your saved kits first, then the presets (`preset: true`).
 - `tripsLeft` is the trips the bank supports, or `-1` when nothing in the kit is used up or the bank has not been seen; `limiting` is the supply that runs out first, and is left out when `tripsLeft` is `-1`.
-- Fields with no value are left out rather than written as `null`: `unit` for single-item supplies, `limiting` as above, and `measured` until it is known. Read a missing field as null.
+- Fields with no value are left out rather than written as `null`: `active` as above, `unit` for single-item supplies, `limiting` as above, and `measured` until it is known. Read a missing field as null.
 - Each need's `items` maps every item id that counts toward it to its units each, so a pooled supply such as food or prayer resolves to concrete items. Ids are canonical, as the bank holds them. `perTrip` is the kit's own amount (`0` for a tool that comes back); `measured` is what trips really used on average, present once two trips are measured.
 - The shape only grows. A breaking change would use a new key. The older internal `quarters` entry keeps its field names for plugins that already read it.
 

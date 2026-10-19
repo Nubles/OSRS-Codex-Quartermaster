@@ -157,6 +157,28 @@ public class PackingTest
 	}
 
 	@Test
+	public void kitBookNamesNoActiveKitUntilThePlayerChoosesOne()
+	{
+		// A fresh install shows its first preset, but nobody chose it: readers such as Bank Steward
+		// would otherwise hold that preset's supplies back for every player.
+		Quarters q = new Quarters();
+		assertEquals(Presets.all().get(0).getId(), q.activeKit().getId());
+		JsonObject fresh = new JsonParser().parse(new Gson().toJson(KitBook.of(q, items(), id -> "?", true))).getAsJsonObject();
+		assertFalse(fresh.has("active"));
+		assertNull(KitBook.of(q, items(), id -> "?", true).getActive());
+
+		// Picking the very preset that was shown makes it the player's choice.
+		q.select(Presets.all().get(0).getId());
+		assertEquals(Presets.all().get(0).getId(), KitBook.of(q, items(), id -> "?", true).getActive());
+
+		// Forgetting the chosen saved kit leaves no choice again.
+		Kit mine = q.capture("Mine", items(ItemID.SHARK, 10), id -> true);
+		assertEquals(mine.getId(), KitBook.of(q, items(), id -> "?", true).getActive());
+		q.forget(mine.getId());
+		assertNull(KitBook.of(q, items(), id -> "?", true).getActive());
+	}
+
+	@Test
 	public void presetSupplyNeverUsedIsNotAskedFor()
 	{
 		// A player in a serpentine helm never takes the preset's anti-venom.

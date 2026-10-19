@@ -118,7 +118,8 @@ public final class KitBook
 		boolean measured)
 	{
 		KitBook book = new KitBook();
-		book.active = quarters.activeKit().getId();
+		// Only a kit the player chose: a fresh install shows its first preset, but nobody picked it.
+		book.active = quarters.chosenKitId();
 		book.target = quarters.getTarget();
 		for (Kit kit : quarters.allKits())
 		{
@@ -169,6 +170,7 @@ public final class KitBook
 		return version;
 	}
 
+	/** The kit the player chose, or null when none is chosen. */
 	public String getActive()
 	{
 		return active;
