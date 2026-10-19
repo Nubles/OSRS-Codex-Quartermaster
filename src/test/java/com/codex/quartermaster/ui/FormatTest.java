@@ -50,4 +50,12 @@ public class FormatTest
 		// Warning switched down to 0 does not make a single trip look plentiful.
 		assertEquals(Theme.GOLD, Theme.trips(1, 0));
 	}
+
+	@Test
+	public void spanTurnsToDaysPastTwoDays()
+	{
+		assertEquals("6h 40m", Format.span(400 * 60_000L));
+		assertEquals("47h 0m", Format.span(47 * 3_600_000L));
+		assertEquals("3d 4h", Format.span(76 * 3_600_000L));
+	}
 }

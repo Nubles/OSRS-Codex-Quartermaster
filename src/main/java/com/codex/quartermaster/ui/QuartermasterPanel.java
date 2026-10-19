@@ -243,7 +243,7 @@ public class QuartermasterPanel extends PluginPanel
 		tiles.add(new StatTile(Format.coins(plan.tripCost()), "Per trip", view.ironman ? "GE value" : "GE prices", Theme.GOLD));
 		boolean measured = view.measured >= Usage.TRUSTED;
 		int left = plan.trips();
-		if (measured && view.tripMs > 0 && left != Plan.UNLIMITED)
+		if (measured && view.tripMs > 0 && left != Plan.UNLIMITED && left < 1000)
 		{
 			// How much play the bank holds, at the pace the player really goes.
 			tiles.add(new StatTile(left == 0 ? "-" : Format.span(left * view.tripMs), "Lasts",
@@ -350,7 +350,7 @@ public class QuartermasterPanel extends PluginPanel
 	{
 		if (item.getWithdraw().isEmpty())
 		{
-			return "none in your bank";
+			return item.getInStorage() > 0 ? Format.amount(item.getInStorage()) + " doses in potion storage" : "none in your bank";
 		}
 		if (item.getWithdraw().size() > 1)
 		{

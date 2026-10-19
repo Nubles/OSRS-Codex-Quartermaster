@@ -24,9 +24,11 @@ public final class Packing
 		private final long carried;
 		private final boolean tool;
 		private final Map<Integer, Long> withdraw;
+		private final long inStorage;
 
-		Item(Supply supply, long target, long carried, boolean tool, Map<Integer, Long> withdraw)
+		Item(Supply supply, long target, long carried, boolean tool, Map<Integer, Long> withdraw, long inStorage)
 		{
+			this.inStorage = inStorage;
 			this.supply = supply;
 			this.target = target;
 			this.carried = carried;
@@ -74,6 +76,12 @@ public final class Packing
 			return tool;
 		}
 
+		/** Doses of it in the bank's potion storage, which the bank grid does not show. */
+		public long getInStorage()
+		{
+			return inStorage;
+		}
+
 		/** Bank items to withdraw for it, in the order to take them, with how many of each. */
 		public Map<Integer, Long> getWithdraw()
 		{
@@ -96,6 +104,19 @@ public final class Packing
 	 */
 	public static Packing check(Kit kit, Map<Integer, Long> carried, Map<Integer, Long> bank)
 	{
+		return check(kit, carried, bank, Collections.emptyMap(), null);
+	}
+
+	/**
+	 * @param stored potion doses in the bank's potion storage, by 1-dose item
+	 * @param usage what the kit has been measured using, or null. A preset's supply that trusted
+	 *     trips show is never used, such as anti-venom for a player in a serpentine helm, is not
+	 *     asked for. A saved kit is what the player chose to pack, so all of it is.
+	 */
+	public static Packing check(Kit kit, Map<Integer, Long> carried, Map<Integer, Long> bank, Map<Integer, Long> stored,
+		Usage usage)
+	{
+		boolean trusted = kit.isPreset() && usage != null && usage.isTrusted();
 		List<Item> items = new ArrayList<>();
 		for (Need need : kit.getNeeds())
 		{
@@ -109,10 +130,15 @@ public final class Packing
 			{
 				continue;
 			}
+			double measured = trusted ? usage.perTrip(supply.getKey()) : -1;
+			if (!tool && measured >= 0 && measured < Planner.KEPT)
+			{
+				continue;
+			}
 			long target = tool ? 1 : need.getPerTrip();
 			long have = supply.count(carried);
 			Map<Integer, Long> withdraw = have >= target ? Collections.emptyMap() : withdraw(supply, target - have, carried, bank);
-			items.add(new Item(supply, target, have, tool, withdraw));
+			items.add(new Item(supply, target, have, tool, withdraw, supply.count(stored)));
 		}
 		return new Packing(kit, items);
 	}

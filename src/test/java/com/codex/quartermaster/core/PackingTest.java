@@ -155,4 +155,34 @@ public class PackingTest
 		assertEquals(1, spade.getAsJsonObject("items").get(String.valueOf(ItemID.SPADE)).getAsInt());
 		assertTrue(kits.get(1).getAsJsonObject().get("preset").getAsBoolean());
 	}
+
+	@Test
+	public void presetSupplyNeverUsedIsNotAskedFor()
+	{
+		// A player in a serpentine helm never takes the preset's anti-venom.
+		Kit preset = new Kit("preset:z", "Zulrah", Arrays.asList(new Need("FOOD", 100), new Need("ANTIVENOM", 4)), true);
+		Usage u = new Usage();
+		for (int i = 0; i < 2; i++)
+		{
+			Map<String, Long> used = new java.util.HashMap<>();
+			used.put("FOOD", 80L);
+			used.put("ANTIVENOM", 0L);
+			u.record(preset, new Trip(0, 600_000, used, 0));
+		}
+		Packing p = Packing.check(preset, items(ItemID.SHARK, 5), items(), Collections.emptyMap(), u);
+		assertEquals(1, p.getItems().size());
+		assertTrue(p.isComplete());
+		// A saved kit is held to everything the player packed, measured or not.
+		Kit saved = new Kit("kit:1", "Mine", preset.getNeeds(), false);
+		assertEquals(2, Packing.check(saved, items(ItemID.SHARK, 5), items(), Collections.emptyMap(), u).getItems().size());
+	}
+
+	@Test
+	public void potionStorageIsNamedWhenTheBankHasNone()
+	{
+		Packing p = Packing.check(kit("PRAYER", 16), items(), items(), items(ItemID._1DOSEPRAYERRESTORE, 40), null);
+		Packing.Item prayer = p.getItems().get(0);
+		assertTrue(prayer.getWithdraw().isEmpty());
+		assertEquals(40, prayer.getInStorage());
+	}
 }

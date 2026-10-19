@@ -459,12 +459,14 @@ public class CodexQuartermasterPlugin extends Plugin
 	 */
 	private void remind()
 	{
-		if (!config.packCheck() || !quarters.hasBank())
+		Kit kit = quarters.activeKit();
+		// A preset's packing list is a guess at a typical trip, so only a kit the player packed and
+		// saved themselves is held to it out loud.
+		if (!config.packCheck() || !quarters.hasBank() || kit.isPreset())
 		{
 			return;
 		}
-		Kit kit = quarters.activeKit();
-		Packing packing = Packing.check(kit, carried, quarters.getBank());
+		Packing packing = Packing.check(kit, carried, quarters.getBank(), quarters.getStored(), quarters.usage(kit.getId()));
 		List<String> forgotten = new ArrayList<>();
 		if (packing.isUnderway())
 		{
@@ -734,7 +736,7 @@ public class CodexQuartermasterPlugin extends Plugin
 			}
 		}
 		Usage usage = quarters.usage(active.getId());
-		Packing packing = quarters.hasBank() ? Packing.check(active, carried, quarters.getBank()) : null;
+		Packing packing = quarters.hasBank() ? Packing.check(active, carried, quarters.getBank(), quarters.getStored(), usage) : null;
 		if (packing != null)
 		{
 			for (Packing.Item item : packing.getItems())
