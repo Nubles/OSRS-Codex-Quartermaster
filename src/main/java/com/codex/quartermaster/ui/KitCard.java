@@ -27,7 +27,9 @@ class KitCard extends Card
 		super(new BorderLayout(0, 6));
 		setBorder(new EmptyBorder(7, 12, 7, 10));
 		int trips = plan.trips();
-		Color color = trips == Plan.UNLIMITED ? Theme.TEXT_MUTED : Theme.trips(trips, view.warn);
+		// A preset nobody packs for reads quietly at 0: blood is kept for the kit in use.
+		Color color = trips == Plan.UNLIMITED ? Theme.TEXT_MUTED
+			: trips == 0 && !chosen && plan.getKit().isPreset() ? Theme.TEXT_FAINT : Theme.trips(trips, view.warn);
 		accent(chosen ? Theme.GOLD : Theme.alpha(color, 160));
 		highlighted(chosen);
 		Plan.Line first = plan.limiting();
@@ -38,7 +40,8 @@ class KitCard extends Card
 		}
 		else if (trips == 0)
 		{
-			note = "Out of " + view.name(first).toLowerCase(java.util.Locale.ENGLISH);
+			note = (chosen || !plan.getKit().isPreset() ? "Out of " : "No ") + view.name(first).toLowerCase(java.util.Locale.ENGLISH)
+				+ (chosen || !plan.getKit().isPreset() ? "" : " banked");
 		}
 		else
 		{

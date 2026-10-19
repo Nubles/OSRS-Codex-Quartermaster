@@ -318,6 +318,7 @@ public class QuartermasterPanel extends PluginPanel
 			? "* measured from your own " + view.measured + " trips"
 			: plan.getKit().isPreset() ? "Typical amounts until your own trips are measured" : "As packed until your own trips are measured";
 		stack.add(Ui.wrapped(foot, Theme.small(), Theme.TEXT_FAINT, WIDTH));
+		stack.add(cardButton(plan));
 		if (!view.tuning.isEmpty())
 		{
 			addTuning(stack, plan);
@@ -357,6 +358,37 @@ public class QuartermasterPanel extends PluginPanel
 			}
 		}
 		replace(supplies, stack);
+	}
+
+	/**
+	 * Copies the kit card, the kit as the inventory a trip packs beside what the bank supports,
+	 * as a picture to paste into a chat.
+	 */
+	private JComponent cardButton(Plan plan)
+	{
+		JPanel buttons = new JPanel(new FlowLayout(FlowLayout.LEFT, 0, 0));
+		buttons.setOpaque(false);
+		CodexButton copy = new CodexButton("Copy kit card", false, null);
+		copy.setToolTipText("Copies a picture of this kit and its numbers, to paste into a chat");
+		String kitId = plan.getKit().getId();
+		copy.setAction(() -> actions.loadout(kitId, loadout ->
+		{
+			// The view may have moved on while the client thread laid the kit out.
+			Plan now = view.active != null && view.active.getKit().getId().equals(kitId) ? view.active : plan;
+			try
+			{
+				Toolkit.getDefaultToolkit().getSystemClipboard()
+					.setContents(KitSheet.transferable(KitSheet.render(now, loadout, view, icons)), null);
+				copy.flash("Copied: paste it anywhere");
+			}
+			catch (IllegalStateException e)
+			{
+				// Another program holds the clipboard.
+				copy.flash("Clipboard busy, try again");
+			}
+		}));
+		buttons.add(copy);
+		return buttons;
 	}
 
 	/** What the kit's own trips say to pack instead, with a button to pack that from now on. */

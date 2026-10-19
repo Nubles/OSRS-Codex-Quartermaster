@@ -42,7 +42,17 @@ class BuyRow extends JComponent
 		FontMetrics fm = g.getFontMetrics();
 		int base = 2 + fm.getAscent() + 1;
 		// The name gets the whole line; the quantity and the bill share the line below it.
-		Ui.shadowed(g, Ui.clip(name, fm, w - tx), tx, base, Theme.TEXT);
+		if (fm.stringWidth(name) > w - tx)
+		{
+			// A long name such as "Extended super antifire(4)" steps down to the small font before it is cut.
+			g.setFont(Theme.small());
+			Ui.shadowed(g, Ui.clip(name, g.getFontMetrics(), w - tx), tx, base, Theme.TEXT);
+			g.setFont(Theme.body());
+		}
+		else
+		{
+			Ui.shadowed(g, name, tx, base, Theme.TEXT);
+		}
 		int low = 2 + Well.SIZE - 5;
 		int aw = fm.stringWidth(amount);
 		Ui.shadowed(g, amount, w - aw, low, color);

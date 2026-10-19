@@ -32,4 +32,12 @@ public interface Actions
 	default void showInBank()
 	{
 	}
+
+	/**
+	 * Lay a kit out as the inventory one trip packs, from the bank as last seen, for the kit card.
+	 * The answer comes back on the Swing thread, or not at all when no account is open.
+	 */
+	default void loadout(String kitId, java.util.function.Consumer<com.codex.quartermaster.core.Loadout> then)
+	{
+	}
 }

@@ -3,6 +3,7 @@ package com.codex.quartermaster;
 import com.codex.quartermaster.core.BankView;
 import com.codex.quartermaster.core.Kit;
 import com.codex.quartermaster.core.KitBook;
+import com.codex.quartermaster.core.Loadout;
 import com.codex.quartermaster.core.Packing;
 import com.codex.quartermaster.core.Plan;
 import com.codex.quartermaster.core.Prices;
@@ -35,6 +36,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
+import java.util.function.Consumer;
 import javax.inject.Inject;
 import javax.swing.JOptionPane;
 import javax.swing.SwingUtilities;
@@ -979,15 +981,17 @@ public class CodexQuartermasterPlugin extends Plugin
 			int n = chosen.trips();
 			Plan.Line first = chosen.limiting();
 			String figure = n == Plan.UNLIMITED ? "Ample" : n + (n == 1 ? " trip" : " trips");
-			String note = active.getName() + (first == null ? "" : n == 0 ? "  -  out of " + supplyName(first).toLowerCase(Locale.ENGLISH)
-				: "  -  " + supplyName(first) + " first");
+			String note = active.getName();
+			String tail = first == null ? null : n == 0 ? "out of " + supplyName(first).toLowerCase(Locale.ENGLISH)
+				: supplyName(first) + " first";
 			List<Packing.Item> missing = packAtBank && packing.isUnderway() ? packing.missing() : Collections.emptyList();
 			if (!missing.isEmpty())
 			{
 				// At the bank, mid-pack, what is still to withdraw matters more than the kit's name.
 				note = "To pack: " + supplyName(missing.get(0).getSupply()) + (missing.size() > 1 ? " and " + (missing.size() - 1) + " more" : "");
+				tail = null;
 			}
-			plaque.show(figure, note, n == Plan.UNLIMITED ? Theme.GOLD : Theme.trips(n, config.warnTrips()));
+			plaque.show(figure, note, tail, n == Plan.UNLIMITED ? Theme.GOLD : Theme.trips(n, config.warnTrips()));
 		}
 		else
 		{
@@ -1171,6 +1175,22 @@ public class CodexQuartermasterPlugin extends Plugin
 		public void showInBank()
 		{
 			clientThread.invokeLater(CodexQuartermasterPlugin.this::showInBank);
+		}
+
+		@Override
+		public void loadout(String kitId, Consumer<Loadout> then)
+		{
+			clientThread.invokeLater(() ->
+			{
+				Kit kit = quarters == null ? null : quarters.kit(kitId);
+				if (kit == null)
+				{
+					return;
+				}
+				// Stackability is the item's own, which only the client thread may ask.
+				Loadout loadout = Loadout.of(kit, quarters.getBank(), id -> itemManager.getItemComposition(id).isStackable());
+				SwingUtilities.invokeLater(() -> then.accept(loadout));
+			});
 		}
 
 		@Override
