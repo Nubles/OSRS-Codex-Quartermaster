@@ -18,6 +18,8 @@ public final class BankView
 {
 	public static final String TAG = "quartermaster";
 	public static final BankView EMPTY = new BankView(Collections.emptySet());
+	/** The key under which Bank Tags remembers the tab open when the bank closed, to open it again next visit. */
+	public static final String REMEMBERED_TAB_KEY = "tab";
 
 	/** Why the bank could not be shown filtered, if it could not. */
 	public enum Refusal

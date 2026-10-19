@@ -272,6 +272,8 @@ public class CodexQuartermasterPlugin extends Plugin
 		{
 			try
 			{
+				// The next start would open the bank on a packing view not worked out yet.
+				closeView();
 				if (save())
 				{
 					configManager.sendConfig();
@@ -449,10 +451,15 @@ public class CodexQuartermasterPlugin extends Plugin
 		return state == GameState.LOGGED_IN || state == GameState.HOPPING || state == GameState.LOADING;
 	}
 
-	/** Closes the bank's filtered view if it is the Quartermaster's. Client thread only. */
+	/**
+	 * Closes the bank's filtered view if it is the Quartermaster's, open now or remembered by Bank
+	 * Tags for the next visit. Bank Tags forgets the open view as the bank closes, before this hears
+	 * of it, but remembers its name for the next visit, so both are checked. Client thread only.
+	 */
 	private void closeView()
 	{
-		if (BankView.TAG.equals(bankTags.getActiveTag()))
+		String remembered = configManager.getConfiguration(BankTagsPlugin.CONFIG_GROUP, BankView.REMEMBERED_TAB_KEY);
+		if (BankView.TAG.equals(bankTags.getActiveTag()) || BankView.TAG.equals(remembered))
 		{
 			bankTags.closeBankTag();
 		}
@@ -881,11 +888,18 @@ public class CodexQuartermasterPlugin extends Plugin
 		boolean packAtBank = loggedIn && bankOpen && packing != null && !packing.getItems().isEmpty() && config.packCheck();
 		withdrawOverlay.show(loggedIn && bankOpen && packing != null && config.highlightBank() && packingNow(packing)
 			? packing.withdrawals() : null);
+		BankView before = packView;
 		packView = loggedIn && bankOpen ? BankView.of(packing) : BankView.EMPTY;
 		if (packView.isEmpty())
 		{
 			// Packed: the whole bank comes back.
 			closeView();
+		}
+		else if (!packView.equals(before) && BankView.TAG.equals(bankTags.getActiveTag()))
+		{
+			// The bank laid itself out before this heard of the withdrawal: lay the view out again
+			// so a supply packed in full leaves it.
+			bankTags.openBankTag(BankView.TAG, BankTagsService.OPTION_NO_LAYOUT);
 		}
 		List<Trip> trips = usage == null ? Collections.emptyList() : new ArrayList<>(usage.getRecent());
 		// Every saved kit restocked together, when there are several to restock.
