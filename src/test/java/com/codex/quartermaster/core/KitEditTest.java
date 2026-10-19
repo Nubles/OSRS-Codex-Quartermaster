@@ -16,7 +16,8 @@ public class KitEditTest
 		Quarters q = new Quarters();
 		Kit kit = q.capture("My kit 1", items(ItemID.SHARK, 10), id -> true);
 		assertTrue(q.rename(kit.getId(), "  Vorkath, the long trip that never seems to end  "));
-		assertEquals("Vorkath, the long trip that neve", kit.getName());
+		// Cut at a whole word, not mid-word ("...that neve"), and never on a word like "that".
+		assertEquals("Vorkath, the long trip", kit.getName());
 		assertFalse("blank", q.rename(kit.getId(), "   "));
 		assertFalse("unchanged", q.rename(kit.getId(), kit.getName()));
 		Kit preset = q.allKits().get(q.allKits().size() - 1);
@@ -24,6 +25,26 @@ public class KitEditTest
 		String was = preset.getName();
 		assertFalse(q.rename(preset.getId(), "Mine now"));
 		assertEquals(was, preset.getName());
+	}
+
+	@Test
+	public void aLongNameIsCutWhereItStillReads()
+	{
+		assertEquals("Vorkath", Quarters.fitName("  Vorkath  "));
+		assertEquals("Zulrah mage", Quarters.fitName("Zulrah \t mage"));
+		// Exactly the cap is kept whole.
+		assertEquals("Theatre of Blood, entry mode, me", Quarters.fitName("Theatre of Blood, entry mode, me"));
+		// An opened bracket the cap would leave unclosed goes, with what it held.
+		assertEquals("Phantom Muspah", Quarters.fitName("Phantom Muspah (shielded, ranged)"));
+		// A closed one stays.
+		assertEquals("Muspah (ranged) with thralls", Quarters.fitName("Muspah (ranged) with thralls and a cannon"));
+		// Never ends on a comma or a joining word.
+		assertEquals("Vardorvis blood moon set", Quarters.fitName("Vardorvis blood moon set, ranged, and more"));
+		// A cut that falls on a space keeps the whole word before it.
+		assertEquals("Corporeal Beast mass, five of us", Quarters.fitName("Corporeal Beast mass, five of us tonight"));
+		// One word longer than the cap is cut where the cap falls.
+		assertEquals("Supercalifragilisticexpialidocio", Quarters.fitName("Supercalifragilisticexpialidocious"));
+		assertEquals(Quarters.NAME_MAX, Quarters.fitName("Supercalifragilisticexpialidocious").length());
 	}
 
 	@Test

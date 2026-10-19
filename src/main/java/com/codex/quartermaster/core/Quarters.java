@@ -1,11 +1,13 @@
 package com.codex.quartermaster.core;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.function.IntPredicate;
@@ -316,6 +318,50 @@ public class Quarters
 	/** The most a kit can plan to use of one supply a trip. */
 	public static final int AMOUNT_MAX = 100_000;
 
+	/** Words a name is never left ending on when it is cut short. */
+	private static final Set<String> DANGLING = new HashSet<>(Arrays.asList(
+		"a", "an", "and", "at", "but", "by", "for", "from", "in", "of", "on", "or", "that", "the", "to", "vs", "with"));
+
+	/**
+	 * A kit's name as it is kept: trimmed, single-spaced, and no longer than {@link #NAME_MAX}. A
+	 * longer name is cut at the last whole word that fits, an opened bracket the cut leaves
+	 * unclosed is dropped with what follows it, and the name never ends on "and", "with" or a
+	 * comma: "Phantom Muspah (shielded, ranged)" keeps "Phantom Muspah". A single word longer
+	 * than the cap is cut where the cap falls.
+	 */
+	public static String fitName(String name)
+	{
+		String clean = name == null ? "" : name.trim().replaceAll("\\s+", " ");
+		if (clean.length() <= NAME_MAX)
+		{
+			return clean;
+		}
+		String cut = clean.substring(0, NAME_MAX);
+		int space = clean.charAt(NAME_MAX) == ' ' ? NAME_MAX : cut.lastIndexOf(' ');
+		if (space >= NAME_MAX / 2)
+		{
+			cut = cut.substring(0, space);
+		}
+		int open = Math.max(cut.lastIndexOf('('), cut.lastIndexOf('['));
+		if (open > 0 && cut.indexOf(cut.charAt(open) == '(' ? ')' : ']', open) < 0)
+		{
+			cut = cut.substring(0, open);
+		}
+		String was;
+		do
+		{
+			was = cut;
+			cut = cut.replaceAll("[\\s,;:/&+(\\[-]+$", "");
+			int last = cut.lastIndexOf(' ');
+			if (last > 0 && DANGLING.contains(cut.substring(last + 1).toLowerCase(Locale.ENGLISH)))
+			{
+				cut = cut.substring(0, last);
+			}
+		}
+		while (!cut.equals(was) && !cut.isEmpty());
+		return cut.isEmpty() ? clean.substring(0, NAME_MAX).trim() : cut;
+	}
+
 	/**
 	 * Renames a saved kit. Presets keep their names.
 	 *
@@ -323,11 +369,7 @@ public class Quarters
 	 */
 	public boolean rename(String kitId, String name)
 	{
-		String clean = name == null ? "" : name.trim();
-		if (clean.length() > NAME_MAX)
-		{
-			clean = clean.substring(0, NAME_MAX).trim();
-		}
+		String clean = fitName(name);
 		for (Kit k : kits)
 		{
 			if (k.getId().equals(kitId) && !clean.isEmpty() && !clean.equals(k.getName()))
