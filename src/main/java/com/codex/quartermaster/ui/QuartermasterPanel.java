@@ -374,7 +374,7 @@ public class QuartermasterPanel extends PluginPanel
 			String then = Format.amount((a.getSuggested() + each - 1) / each);
 			String note = a.isMore()
 				? "ran out " + a.getRanOut() + " of " + a.getTrips()
-				: "most used " + Format.amount((a.getCovers() + each - 1) / each);
+				: Format.amount(Math.max(0, (a.getPacked() + each - 1) / each - (a.getSuggested() + each - 1) / each)) + " left over";
 			rows.add(new BuyRow(a.getItem(), view.name(a.getItem()), note, now + " → " + then, a.isMore() ? Theme.EMBER : Theme.TEAL, icons));
 		}
 		card.add(rows, BorderLayout.CENTER);
@@ -390,7 +390,7 @@ public class QuartermasterPanel extends PluginPanel
 		buttons.add(apply);
 		card.add(buttons, BorderLayout.SOUTH);
 		stack.add(card);
-		stack.add(Ui.wrapped("From your last " + view.tuning.get(0).getTrips() + " trips with this kit: \"most used\" covers nine trips in ten. "
+		stack.add(Ui.wrapped("From your last " + view.tuning.get(0).getTrips() + " trips with this kit: the new amount covers nine trips in ten. "
 				+ "The packing check and trips left follow the new amounts.",
 			Theme.small(), Theme.TEXT_FAINT, WIDTH));
 	}
