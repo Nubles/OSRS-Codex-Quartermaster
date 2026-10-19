@@ -170,6 +170,8 @@ public class CodexQuartermasterPlugin extends Plugin
 	/** The kit book as last written, so it is only written again when it changes. */
 	private String lastBook;
 	private final Map<Integer, String> names = new HashMap<>();
+	/** Each shopping item's Grand Exchange buy limit; absent until the client knows it. */
+	private final Map<Integer, Integer> limits = new HashMap<>();
 	private final Prices prices = id -> itemManager.getItemPrice(id);
 
 	private QuartermasterPanel panel;
@@ -264,6 +266,7 @@ public class CodexQuartermasterPlugin extends Plugin
 			profile = null;
 			lastBook = null;
 			names.clear();
+			limits.clear();
 			bankOpen = false;
 		});
 		panel = null;
@@ -904,7 +907,7 @@ public class CodexQuartermasterPlugin extends Plugin
 			{
 				name(line.getSupply().getIcon());
 				line.getHeld().keySet().forEach(this::name);
-				line.getBuys().forEach(b -> name(b.getItemId()));
+				line.getBuys().forEach(b -> named(b.getItemId()));
 			}
 		}
 		Usage usage = quarters.usage(active.getId());
@@ -943,7 +946,7 @@ public class CodexQuartermasterPlugin extends Plugin
 			for (Plan.Line line : all.getLines())
 			{
 				name(line.getSupply().getIcon());
-				line.getBuys().forEach(b -> name(b.getItemId()));
+				line.getBuys().forEach(b -> named(b.getItemId()));
 			}
 		}
 		Map<String, Returns> returns = new HashMap<>();
@@ -965,6 +968,7 @@ public class CodexQuartermasterPlugin extends Plugin
 			.all(all, active.isPreset() && active.getId().equals(quarters.chosenKitId()))
 			.tuning(tuning)
 			.returns(returns)
+			.limits(new HashMap<>(limits))
 			.ironman(ironman())
 			.packing(packAtBank ? packing : null, usage == null ? 0 : usage.typicalDuration());
 
@@ -1043,6 +1047,22 @@ public class CodexQuartermasterPlugin extends Plugin
 		return names.computeIfAbsent(itemId, id -> itemManager.getItemComposition(id).getName());
 	}
 
+	/** Names a shopping item and notes its Grand Exchange buy limit, read once per item. */
+	private void named(int itemId)
+	{
+		name(itemId);
+		if (!limits.containsKey(itemId))
+		{
+			// Item stats load in the background at start-up: an item asked about before they are
+			// in is asked again next time, rather than remembered as having no limit.
+			ItemStats stats = itemManager.getItemStats(itemId);
+			if (stats != null && stats.getGeLimit() > 0)
+			{
+				limits.put(itemId, stats.getGeLimit());
+			}
+		}
+	}
+
 	/** The panel's buttons; each change is made on the client thread, where the quarters live. */
 	private final class PanelActions implements Actions
 	{
@@ -1097,7 +1117,7 @@ public class CodexQuartermasterPlugin extends Plugin
 					return;
 				}
 				carried = readCarried();
-				Kit kit = quarters.capture(name.length() > 32 ? name.substring(0, 32) : name, carried,
+				Kit kit = quarters.capture(Quarters.fitName(name), carried,
 					CodexQuartermasterPlugin.this::isSupply, id -> itemManager.getItemComposition(id).isStackable());
 				if (kit == null)
 				{

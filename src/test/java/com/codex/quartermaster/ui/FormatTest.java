@@ -13,9 +13,25 @@ public class FormatTest
 		assertEquals("412k", Format.amount(412_000));
 		assertEquals("1.24M", Format.amount(1_240_000));
 		assertEquals("12.5M", Format.amount(12_500_000));
-		assertEquals("2.1B", Format.amount(2_100_000_000L));
 		assertEquals("-45.2k", Format.coins(-45_200));
-		assertEquals("10k", Format.amount(10_000));
+	}
+
+	@Test
+	public void amountsSideBySideKeepTheSamePrecision()
+	{
+		// Three figures throughout: a round amount keeps its zero instead of reading coarser.
+		assertEquals("3.60M", Format.amount(3_600_000));
+		assertEquals("26.0M", Format.amount(26_000_000));
+		assertEquals("98.7M", Format.amount(98_700_000));
+		assertEquals("812M", Format.amount(812_400_000));
+		assertEquals("2.10B", Format.amount(2_100_000_000L));
+		assertEquals("10.0k", Format.amount(10_000));
+		// Rounding that reaches the next band moves into it.
+		assertEquals("100k", Format.amount(99_960));
+		assertEquals("1.00M", Format.amount(999_600));
+		assertEquals("10.0M", Format.amount(9_996_000));
+		assertEquals("1.00B", Format.amount(999_700_000));
+		assertEquals("+880k", Format.signed(880_000));
 	}
 
 	@Test

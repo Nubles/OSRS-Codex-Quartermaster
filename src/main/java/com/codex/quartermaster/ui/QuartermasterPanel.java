@@ -1,5 +1,7 @@
 package com.codex.quartermaster.ui;
 
+import com.codex.quartermaster.core.BuyLimits;
+import com.codex.quartermaster.core.Loadout;
 import com.codex.quartermaster.core.Packing;
 import com.codex.quartermaster.core.Need;
 import com.codex.quartermaster.core.Plan;
@@ -32,6 +34,7 @@ import javax.swing.JPopupMenu;
 import javax.swing.JScrollPane;
 import javax.swing.ScrollPaneConstants;
 import javax.swing.SwingUtilities;
+import javax.swing.Timer;
 import javax.swing.border.EmptyBorder;
 import net.runelite.client.ui.PluginPanel;
 
@@ -280,7 +283,9 @@ public class QuartermasterPanel extends PluginPanel
 			stack.add(earn);
 		}
 
-		stack.add(new SectionHeader("Supplies", plan.getKit().getName()));
+		// The crest already names the kit; the heading counts what it carries instead.
+		int count = plan.getLines().size();
+		stack.add(new SectionHeader("Supplies", count + (count == 1 ? " supply" : " supplies")));
 		Card list = new Card(new BorderLayout());
 		StackPanel rows = new StackPanel(2, 0);
 		List<Plan.Line> lines = new ArrayList<>(plan.getLines());
@@ -364,6 +369,9 @@ public class QuartermasterPanel extends PluginPanel
 	 * Copies the kit card, the kit as the inventory a trip packs beside what the bank supports,
 	 * as a picture to paste into a chat.
 	 */
+	/** How long a kit card waits for item pictures still on their way before it is drawn anyway. */
+	private static final int PICTURE_WAIT_MS = 3_000;
+
 	private JComponent cardButton(Plan plan)
 	{
 		JPanel buttons = new JPanel(new FlowLayout(FlowLayout.LEFT, 0, 0));
@@ -375,23 +383,57 @@ public class QuartermasterPanel extends PluginPanel
 		{
 			// The view may have moved on while the client thread laid the kit out: its figures are
 			// the chosen kit's, so a card is only drawn for the kit still chosen.
-			Plan now = view.active;
-			if (now == null || !now.getKit().getId().equals(kitId))
+			if (view.active == null || !view.active.getKit().getId().equals(kitId))
 			{
 				copy.flash("Kit changed, try again");
 				return;
 			}
-			try
+			List<Integer> pictures = new ArrayList<>();
+			for (Loadout.Slot slot : loadout.getSlots())
 			{
-				Toolkit.getDefaultToolkit().getSystemClipboard()
-					.setContents(KitSheet.transferable(KitSheet.render(now, loadout, view, icons)), null);
-				copy.flash("Copied: paste it anywhere");
+				pictures.add(slot.getItemId());
 			}
-			catch (IllegalStateException e)
+			// The card waits for every slot's picture, so it never goes out with empty slots; a
+			// picture that never comes holds it up only so long.
+			boolean[] drawn = {false};
+			Runnable draw = () ->
 			{
-				// Another program holds the clipboard.
-				copy.flash("Clipboard busy, try again");
+				if (drawn[0])
+				{
+					return;
+				}
+				drawn[0] = true;
+				Plan now = view.active;
+				if (now == null || !now.getKit().getId().equals(kitId))
+				{
+					copy.flash("Kit changed, try again");
+					return;
+				}
+				try
+				{
+					Toolkit.getDefaultToolkit().getSystemClipboard()
+						.setContents(KitSheet.transferable(KitSheet.render(now, loadout, view, icons)), null);
+					copy.flash("Copied: paste it anywhere");
+				}
+				catch (IllegalStateException e)
+				{
+					// Another program holds the clipboard.
+					copy.flash("Clipboard busy, try again");
+				}
+			};
+			if (icons == null)
+			{
+				draw.run();
+				return;
 			}
+			Timer late = new Timer(PICTURE_WAIT_MS, e -> draw.run());
+			late.setRepeats(false);
+			late.start();
+			icons.whenLoaded(pictures, () ->
+			{
+				late.stop();
+				draw.run();
+			});
 		}));
 		buttons.add(copy);
 		return buttons;
@@ -569,7 +611,7 @@ public class QuartermasterPanel extends PluginPanel
 		else
 		{
 			tiles.add(new StatTile(shopping.isEmpty() ? "Nothing" : Format.coins(plan.restockCost()), "Restock",
-				shopping.isEmpty() ? "already stocked" : shopping.size() + (shopping.size() == 1 ? " item" : " items"), Theme.GOLD));
+				shopping.isEmpty() ? "already stocked" : "at GE prices", Theme.GOLD));
 		}
 		String after = view.ironman ? "once gathered" : unbuyable.isEmpty() ? "after buying" : "some not sold";
 		tiles.add(new StatTile(trips == Plan.UNLIMITED ? "-" : Format.trips(trips) + " to " + Math.max(trips, plan.getTarget()),
@@ -585,7 +627,8 @@ public class QuartermasterPanel extends PluginPanel
 		}
 		if (!shopping.isEmpty())
 		{
-			stack.add(new SectionHeader("Shopping list", Format.coins(plan.restockCost())));
+			// The bill is the tile's figure; the heading counts the items instead of saying it again.
+			stack.add(new SectionHeader("Shopping list", shopping.size() + (shopping.size() == 1 ? " item" : " items")));
 			Card list = new Card(new BorderLayout());
 			StackPanel rows = new StackPanel(2, 0);
 			for (Plan.Buy buy : shopping)
@@ -596,6 +639,7 @@ public class QuartermasterPanel extends PluginPanel
 			}
 			list.add(rows, BorderLayout.CENTER);
 			stack.add(list);
+			addLimits(stack, BuyLimits.of(shopping, view::limit));
 			stack.add(copyButton(plan));
 		}
 		if (!unbuyable.isEmpty())
@@ -623,6 +667,36 @@ public class QuartermasterPanel extends PluginPanel
 				: "Each supply is bought as the item you already use most of, at the client's Grand Exchange prices."),
 			Theme.small(), Theme.TEXT_FAINT, WIDTH));
 		replace(restock, stack);
+	}
+
+	/**
+	 * The items the exchange will not sell in one go: each with its four-hour limit and the rounds
+	 * of buying it needs, and how long the whole list takes, so a 100-trip restock is planned
+	 * across sittings instead of found out at the exchange.
+	 */
+	private void addLimits(StackPanel stack, BuyLimits limits)
+	{
+		if (limits.isEmpty())
+		{
+			return;
+		}
+		long hours = limits.waitMs() / 3_600_000L;
+		// Each row has its rounds; the heading gives the wait they add up to.
+		stack.add(new SectionHeader("Buy limits", hours + "h to buy all"));
+		Card card = new Card(new BorderLayout(0, 4));
+		card.accent(Theme.EMBER);
+		StackPanel rows = new StackPanel(2, 0);
+		for (BuyLimits.Over over : limits.getOver())
+		{
+			rows.add(new BuyRow(over.getItemId(), view.name(over.getItemId()),
+				"limit " + String.format(Locale.ENGLISH, "%,d", over.getLimit()),
+				over.getRounds() + " rounds", Theme.EMBER, icons));
+		}
+		card.add(rows, BorderLayout.CENTER);
+		card.add(Ui.wrapped((limits.getOver().size() == 1 ? "The exchange sells this" : "The exchange sells these")
+			+ " only so many every four hours: buy one round now and the next each time the limit resets.",
+			Theme.small(), Theme.TEXT_FAINT, WIDTH - 24), BorderLayout.SOUTH);
+		stack.add(card);
 	}
 
 	/** The kits restocked together, by name. */
@@ -686,7 +760,14 @@ public class QuartermasterPanel extends PluginPanel
 		}
 		for (Plan.Buy buy : plan.shopping())
 		{
-			text.append(view.name(buy.getItemId())).append(" x ").append(buy.getQuantity()).append('\n');
+			text.append(view.name(buy.getItemId())).append(" x ").append(buy.getQuantity());
+			int limit = view.limit(buy.getItemId());
+			if (BuyLimits.rounds(buy.getQuantity(), limit) > 1)
+			{
+				text.append(" (limit ").append(limit).append(" per 4h, ")
+					.append(BuyLimits.rounds(buy.getQuantity(), limit)).append(" rounds)");
+			}
+			text.append('\n');
 		}
 		text.append("Total ").append(Format.coins(plan.restockCost())).append(" gp");
 		Toolkit.getDefaultToolkit().getSystemClipboard().setContents(new StringSelection(text.toString()), null);

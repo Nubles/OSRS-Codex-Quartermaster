@@ -48,6 +48,8 @@ public final class View
 	List<Tuning.Advice> tuning = Collections.emptyList();
 	/** What each kit's trips bring back, by kit id; a kit with no trips is absent. */
 	Map<String, Returns> returns = Collections.emptyMap();
+	/** The Grand Exchange's four-hour buy limit of each item on the shopping lists; absent when unknown. */
+	Map<Integer, Integer> limits = Collections.emptyMap();
 
 	/**
 	 * @param active the chosen kit's plan, or null when no account is open
@@ -100,6 +102,20 @@ public final class View
 	{
 		this.returns = returns == null ? Collections.emptyMap() : returns;
 		return this;
+	}
+
+	/** @param limits each shopping item's Grand Exchange buy limit, by item id */
+	public View limits(Map<Integer, Integer> limits)
+	{
+		this.limits = limits == null ? Collections.emptyMap() : limits;
+		return this;
+	}
+
+	/** An item's buy limit every four hours, or 0 when it is not known. */
+	int limit(int itemId)
+	{
+		Integer l = limits.get(itemId);
+		return l == null ? 0 : l;
 	}
 
 	public View ironman(boolean value)
