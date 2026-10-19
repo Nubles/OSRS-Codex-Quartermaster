@@ -361,7 +361,7 @@ public class QuartermasterPanel extends PluginPanel
 		}
 		if (item.isTool())
 		{
-			return item.isForgotten() ? "not packed; it comes back" : "comes back every trip";
+			return item.isForgotten() ? "not packed" : "comes back every trip";
 		}
 		return item.isForgotten() ? "not packed" : Format.amount(item.getMissing()) + View.unit(item.getSupply()) + " short";
 	}

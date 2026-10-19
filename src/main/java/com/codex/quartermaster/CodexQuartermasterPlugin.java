@@ -745,7 +745,7 @@ public class CodexQuartermasterPlugin extends Plugin
 				item.getWithdraw().keySet().forEach(this::name);
 			}
 		}
-		boolean packAtBank = loggedIn && bankOpen && packing != null && config.packCheck();
+		boolean packAtBank = loggedIn && bankOpen && packing != null && !packing.getItems().isEmpty() && config.packCheck();
 		withdrawOverlay.show(loggedIn && bankOpen && packing != null && config.highlightBank() ? packing.withdrawals() : null);
 		List<Trip> trips = usage == null ? Collections.emptyList() : new ArrayList<>(usage.getRecent());
 		Player player = client.getLocalPlayer();
