@@ -3,6 +3,7 @@ package com.codex.quartermaster;
 import net.runelite.client.config.Config;
 import net.runelite.client.config.ConfigGroup;
 import net.runelite.client.config.ConfigItem;
+import net.runelite.client.config.ConfigSection;
 import net.runelite.client.config.Range;
 
 @ConfigGroup(CodexQuartermasterConfig.GROUP)
@@ -13,16 +14,51 @@ public interface CodexQuartermasterConfig extends Config
 	/** Where the plaque shows. */
 	enum PlaqueMode
 	{
-		AT_THE_BANK,
-		ALWAYS,
-		NEVER
+		AT_THE_BANK("At the bank"),
+		ALWAYS("Always"),
+		NEVER("Never");
+
+		private final String label;
+
+		PlaqueMode(String label)
+		{
+			this.label = label;
+		}
+
+		@Override
+		public String toString()
+		{
+			return label;
+		}
 	}
+
+	@ConfigSection(
+		name = "Planning",
+		description = "How the Quartermaster counts your trips",
+		position = 0
+	)
+	String planning = "planning";
+
+	@ConfigSection(
+		name = "At the bank",
+		description = "Help while you pack a kit",
+		position = 1
+	)
+	String atTheBank = "atTheBank";
+
+	@ConfigSection(
+		name = "Display",
+		description = "The plaque in the game view and the kit card",
+		position = 2
+	)
+	String display = "display";
 
 	@ConfigItem(
 		keyName = "warnTrips",
 		name = "Warn at trips left",
-		description = "When you set out with this many trips of supplies or fewer left, say so in the chat box",
-		position = 0
+		description = "Say so in the chat box when you leave the bank with this many trips of supplies or fewer left",
+		position = 2,
+		section = planning
 	)
 	@Range(min = 0, max = 50)
 	default int warnTrips()
@@ -33,8 +69,9 @@ public interface CodexQuartermasterConfig extends Config
 	@ConfigItem(
 		keyName = "plaque",
 		name = "Supply plaque",
-		description = "Show a small plaque in the game view with how many trips your bank supports and what runs out first",
-		position = 1
+		description = "When to show the plaque with how many trips your bank supports and what runs out first",
+		position = 0,
+		section = display
 	)
 	default PlaqueMode plaque()
 	{
@@ -44,8 +81,9 @@ public interface CodexQuartermasterConfig extends Config
 	@ConfigItem(
 		keyName = "measured",
 		name = "Plan from your trips",
-		description = "Once a kit has been measured over a couple of trips, plan with what you really used instead of the kit's own amounts",
-		position = 2
+		description = "Once a kit has been measured over two trips, plan with what you really used instead of the kit's own amounts",
+		position = 0,
+		section = planning
 	)
 	default boolean measured()
 	{
@@ -55,8 +93,9 @@ public interface CodexQuartermasterConfig extends Config
 	@ConfigItem(
 		keyName = "recognise",
 		name = "Recognise packed kits",
-		description = "When you close the bank carrying one of your saved kits, choose it automatically",
-		position = 3
+		description = "Choose one of your saved kits by itself when you leave the bank carrying it",
+		position = 1,
+		section = planning
 	)
 	default boolean recognise()
 	{
@@ -66,8 +105,9 @@ public interface CodexQuartermasterConfig extends Config
 	@ConfigItem(
 		keyName = "packCheck",
 		name = "Packing check",
-		description = "At the bank, list what the chosen kit still needs withdrawn, and when you leave with most of it packed but something forgotten, say so in the chat box",
-		position = 4
+		description = "List what the chosen kit still needs at the bank, and say so in the chat box if you leave with something forgotten",
+		position = 0,
+		section = atTheBank
 	)
 	default boolean packCheck()
 	{
@@ -76,9 +116,10 @@ public interface CodexQuartermasterConfig extends Config
 
 	@ConfigItem(
 		keyName = "highlightBank",
-		name = "Highlight what to withdraw",
-		description = "While you pack the chosen kit at the bank (part-packed, or with room in your inventory for the rest), outline the bank items it still needs, with how many to take",
-		position = 5
+		name = "Mark what to withdraw",
+		description = "Outline the bank items the chosen kit still needs, with how many to take, while you pack it",
+		position = 1,
+		section = atTheBank
 	)
 	default boolean highlightBank()
 	{
@@ -88,8 +129,9 @@ public interface CodexQuartermasterConfig extends Config
 	@ConfigItem(
 		keyName = "nameOnCard",
 		name = "Name on cards",
-		description = "Write your character's name on the kit card; turn off to share it without it",
-		position = 6
+		description = "Write your character's name on the kit card; turn off to share the card without it",
+		position = 1,
+		section = display
 	)
 	default boolean nameOnCard()
 	{
