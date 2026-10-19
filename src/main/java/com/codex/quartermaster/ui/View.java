@@ -48,6 +48,8 @@ public final class View
 	List<Tuning.Advice> tuning = Collections.emptyList();
 	/** What each kit's trips bring back, by kit id; a kit with no trips is absent. */
 	Map<String, Returns> returns = Collections.emptyMap();
+	/** Whether the kit card names the player; off to share it without the name. */
+	boolean nameOnCard = true;
 	/** The Grand Exchange's four-hour buy limit of each item on the shopping lists; absent when unknown. */
 	Map<Integer, Integer> limits = Collections.emptyMap();
 
@@ -116,6 +118,12 @@ public final class View
 	{
 		Integer l = limits.get(itemId);
 		return l == null ? 0 : l;
+	}
+
+	public View nameOnCard(boolean value)
+	{
+		nameOnCard = value;
+		return this;
 	}
 
 	public View ironman(boolean value)

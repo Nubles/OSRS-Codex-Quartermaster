@@ -84,4 +84,15 @@ public interface CodexQuartermasterConfig extends Config
 	{
 		return true;
 	}
+
+	@ConfigItem(
+		keyName = "nameOnCard",
+		name = "Name on cards",
+		description = "Write your character's name on the kit card; turn off to share it without it",
+		position = 6
+	)
+	default boolean nameOnCard()
+	{
+		return true;
+	}
 }

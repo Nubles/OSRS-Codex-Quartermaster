@@ -171,7 +171,7 @@ public final class KitSheet
 		g.setColor(Theme.alpha(Theme.GOLD, 40));
 		g.draw(new RoundRectangle2D.Float(4.5f, 4.5f, WIDTH - 9, height - 9, 10, 10));
 
-		header(g, title, view.player, header);
+		header(g, title, view.nameOnCard ? view.player : null, header);
 		rule(g, header + 2);
 
 		// The inventory, as the game draws it.

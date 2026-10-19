@@ -969,6 +969,7 @@ public class CodexQuartermasterPlugin extends Plugin
 			.tuning(tuning)
 			.returns(returns)
 			.limits(new HashMap<>(limits))
+			.nameOnCard(config.nameOnCard())
 			.ironman(ironman())
 			.packing(packAtBank ? packing : null, usage == null ? 0 : usage.typicalDuration());
 
