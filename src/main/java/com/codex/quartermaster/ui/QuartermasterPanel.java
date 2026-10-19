@@ -373,8 +373,14 @@ public class QuartermasterPanel extends PluginPanel
 		String kitId = plan.getKit().getId();
 		copy.setAction(() -> actions.loadout(kitId, loadout ->
 		{
-			// The view may have moved on while the client thread laid the kit out.
-			Plan now = view.active != null && view.active.getKit().getId().equals(kitId) ? view.active : plan;
+			// The view may have moved on while the client thread laid the kit out: its figures are
+			// the chosen kit's, so a card is only drawn for the kit still chosen.
+			Plan now = view.active;
+			if (now == null || !now.getKit().getId().equals(kitId))
+			{
+				copy.flash("Kit changed, try again");
+				return;
+			}
 			try
 			{
 				Toolkit.getDefaultToolkit().getSystemClipboard()

@@ -64,7 +64,8 @@ public class SectionHeader extends JComponent
 		if (trailing != null && !trailing.isEmpty())
 		{
 			// A long kit name gives way to the heading rather than running over it.
-			String shown = Ui.clip(trailing, fm, Math.max(0, x + w - lineStart - 8));
+			int room = x + w - lineStart - 8;
+			String shown = room < fm.stringWidth("Ab...") ? "" : Ui.clip(trailing, fm, room);
 			int tw = fm.stringWidth(shown);
 			lineEnd = x + w - tw - 6;
 			g.setColor(Theme.TEXT_FAINT);
