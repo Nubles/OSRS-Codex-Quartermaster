@@ -331,13 +331,10 @@ public class QuartermasterPanel extends PluginPanel
 
 		if (!view.trips.isEmpty())
 		{
-			long sum = 0;
-			for (Trip t : view.trips)
-			{
-				sum += t.getCost();
-			}
-			stack.add(new SectionHeader("Recent trips", returns.isKnown() ? "net " + Format.signed(returns.netPerTrip())
-				: "avg " + Format.coins(sum / view.trips.size())));
+			// The tiles above already give a trip's cost and net; the heading says how many trips are listed.
+			int listed = Math.min(RECENT, view.trips.size());
+			stack.add(new SectionHeader("Recent trips", listed < view.measured ? "last " + listed + " of " + view.measured
+				: listed == 1 ? "1 trip" : listed + " trips"));
 			Card recent = new Card(new BorderLayout());
 			StackPanel tripRows = new StackPanel(4, 0);
 			for (int i = view.trips.size() - 1; i >= 0 && i >= view.trips.size() - RECENT; i--)
