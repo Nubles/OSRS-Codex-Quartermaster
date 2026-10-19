@@ -63,7 +63,49 @@ public final class KitSheet
 		}
 	}
 
-	/** The figures the card shows for a kit, most telling first, leaving out what is not known. */
+	/** As many figures as the column beside the inventory holds. */
+	static final int FACTS = 4;
+
+	/**
+	 * The figures the card shows for a kit, most telling first, leaving out what is not known.
+	 * A kit with few trips behind it would leave the column half empty, so what is always known
+	 * (the slots it packs and the bill to restock it) fills in below, up to {@link #FACTS}.
+	 */
+	static List<Fact> facts(Plan plan, View view, Returns returns, Loadout loadout)
+	{
+		List<Fact> out = facts(plan, view, returns);
+		if (out.size() < FACTS && loadout != null)
+		{
+			int used = loadout.getSlots().size() + loadout.getOverflow();
+			int free = Loadout.SLOTS - used;
+			out.add(new Fact("Packs", used + (used == 1 ? " slot" : " slots"),
+				free > 0 ? free + " left free" : free == 0 ? "a full inventory" : -free + " more than fit", free < 0 ? Theme.EMBER : Theme.TEAL));
+		}
+		if (out.size() < FACTS && plan.trips() != Plan.UNLIMITED)
+		{
+			int target = plan.getTarget();
+			if (plan.trips() >= target)
+			{
+				out.add(new Fact("Restock", "Stocked", "for " + target + " trips", Theme.GREEN));
+			}
+			else if (view.ironman)
+			{
+				int shortOf = 0;
+				for (Plan.Line line : plan.getLines())
+				{
+					shortOf += line.getShort() > 0 ? 1 : 0;
+				}
+				out.add(new Fact("To gather", shortOf + (shortOf == 1 ? " supply" : " supplies"), "for " + target + " trips", Theme.GOLD));
+			}
+			else
+			{
+				out.add(new Fact("Restock", Format.coins(plan.restockCost()), "to " + target + " trips", Theme.GOLD));
+			}
+		}
+		return out;
+	}
+
+	/** The figures only a kit's own numbers give, most telling first. */
 	static List<Fact> facts(Plan plan, View view, Returns returns)
 	{
 		List<Fact> out = new ArrayList<>();
@@ -93,16 +135,23 @@ public final class KitSheet
 	}
 
 	/**
-	 * Draws the card. Icons not loaded yet are left out rather than waited for; the panel has
-	 * shown the kit's items, so they almost always are.
+	 * Draws the card from the pictures as they are; the panel waits for every slot's picture
+	 * ({@link ItemIcons#whenLoaded}) before it asks for one.
 	 */
 	public static BufferedImage render(Plan plan, Loadout loadout, View view, ItemIcons icons)
 	{
 		Returns returns = view.returns.get(plan.getKit().getId());
-		List<Fact> facts = facts(plan, view, returns);
+		List<Fact> facts = facts(plan, view, returns, loadout);
+		BufferedImage probe = new BufferedImage(1, 1, BufferedImage.TYPE_INT_ARGB);
+		Graphics2D pg = probe.createGraphics();
+		// Measured with the same hints the card is drawn with, so a line that fits here fits there.
+		Theme.smooth(pg);
+		Title title = title(plan.getKit().getName(), pg.getFontMetrics(Theme.title())::stringWidth, ROOM);
+		pg.dispose();
+		int header = HEADER + (title.lines.size() - 1) * (title.large ? LARGE_LINE : BOLD_LINE);
 		int gridW = COLS * SLOT_W + 8;
 		int gridH = ROWS * SLOT_H + 8;
-		int bodyY = HEADER + 12;
+		int bodyY = header + 12;
 		int footY = bodyY + gridH + 12;
 		int height = footY + 26;
 		BufferedImage image = new BufferedImage(WIDTH, height, BufferedImage.TYPE_INT_ARGB);
@@ -113,8 +162,8 @@ public final class KitSheet
 		RoundRectangle2D frame = new RoundRectangle2D.Float(0.5f, 0.5f, WIDTH - 1, height - 1, 14, 14);
 		g.setPaint(new GradientPaint(0, 0, Theme.CARD_TOP, 0, height, Theme.INK_DEEP));
 		g.fill(frame);
-		g.setPaint(new GradientPaint(0, 0, Theme.mix(Theme.INK, Theme.GOLD_DIM, 0.3), 0, HEADER, Theme.alpha(Theme.INK, 0)));
-		g.fill(new RoundRectangle2D.Float(1, 1, WIDTH - 2, HEADER, 13, 13));
+		g.setPaint(new GradientPaint(0, 0, Theme.mix(Theme.INK, Theme.GOLD_DIM, 0.3), 0, header, Theme.alpha(Theme.INK, 0)));
+		g.fill(new RoundRectangle2D.Float(1, 1, WIDTH - 2, header, 13, 13));
 		g.setStroke(new BasicStroke(1.5f));
 		g.setPaint(new GradientPaint(0, 0, Theme.GOLD, 0, height, Theme.GOLD_DIM));
 		g.draw(new RoundRectangle2D.Float(1, 1, WIDTH - 2.5f, height - 2.5f, 13, 13));
@@ -122,8 +171,8 @@ public final class KitSheet
 		g.setColor(Theme.alpha(Theme.GOLD, 40));
 		g.draw(new RoundRectangle2D.Float(4.5f, 4.5f, WIDTH - 9, height - 9, 10, 10));
 
-		header(g, plan.getKit().getName(), view.player);
-		rule(g, HEADER + 2);
+		header(g, title, view.player, header);
+		rule(g, header + 2);
 
 		// The inventory, as the game draws it.
 		int gx = PAD;
@@ -170,7 +219,7 @@ public final class KitSheet
 		int fx = gx + gridW + 14;
 		int fw = WIDTH - fx - PAD;
 		int fy = bodyY + 2;
-		int each = Math.min(64, gridH / Math.max(1, facts.size()));
+		int each = Math.min(gridH / FACTS, gridH / Math.max(1, facts.size()));
 		for (Fact f : facts)
 		{
 			fact(g, f, fx, fy, fw, each);
@@ -191,11 +240,107 @@ public final class KitSheet
 		return image;
 	}
 
-	private static void header(Graphics2D g, String kit, String player)
+	/** Width beside the medallion for the kit's name. */
+	private static final int ROOM = WIDTH - (PAD + 46 + 12) - PAD;
+	/** How far down each further line of the name sits, in the doubled lettering and in plain bold. */
+	private static final int LARGE_LINE = 28;
+	private static final int BOLD_LINE = 16;
+
+	/** How the kit's name is lettered: its lines, and whether they are in the doubled figures. */
+	static final class Title
+	{
+		final List<String> lines;
+		final boolean large;
+
+		Title(List<String> lines, boolean large)
+		{
+			this.lines = lines;
+			this.large = large;
+		}
+	}
+
+	/**
+	 * Letters the kit's name the way it reads best: on one line, or two broken between words, in
+	 * the doubled figure lettering whenever each line fits; only a name too long for that steps
+	 * down to plain bold, on up to two lines, the second cut short if it must be.
+	 *
+	 * @param bold the width of text in the bold font; the doubled lettering is twice it
+	 */
+	static Title title(String kit, java.util.function.ToIntFunction<String> bold, int room)
+	{
+		String upper = kit.toUpperCase(Locale.ENGLISH);
+		List<String> large = wrap(upper, t -> bold.applyAsInt(t) * 2 + 2, room);
+		if (large != null)
+		{
+			return new Title(large, true);
+		}
+		List<String> plain = wrap(kit, bold, room);
+		if (plain != null)
+		{
+			return new Title(plain, false);
+		}
+		// Too long even so: as much as fits on the first line, the rest on the second.
+		String[] words = kit.split(" ");
+		StringBuilder first = new StringBuilder();
+		int i = 0;
+		while (i < words.length && bold.applyAsInt(first + (first.length() == 0 ? "" : " ") + words[i]) <= room)
+		{
+			first.append(first.length() == 0 ? "" : " ").append(words[i++]);
+		}
+		List<String> lines = new ArrayList<>();
+		if (first.length() > 0)
+		{
+			lines.add(first.toString());
+		}
+		StringBuilder rest = new StringBuilder();
+		for (; i < words.length; i++)
+		{
+			rest.append(rest.length() == 0 ? "" : " ").append(words[i]);
+		}
+		if (rest.length() > 0)
+		{
+			lines.add(rest.toString());
+		}
+		return new Title(lines.subList(0, Math.min(2, lines.size())), false);
+	}
+
+	/** The words of {@code text} on one line or two, or null when they do not fit on two. */
+	private static List<String> wrap(String text, java.util.function.ToIntFunction<String> width, int room)
+	{
+		List<String> lines = new ArrayList<>();
+		if (width.applyAsInt(text) <= room)
+		{
+			lines.add(text);
+			return lines;
+		}
+		// The break that leaves the two lines most even, so neither holds a lone word it need not.
+		String[] words = text.split(" ");
+		String best = null;
+		int bestWidest = Integer.MAX_VALUE;
+		for (int cut = 1; cut < words.length; cut++)
+		{
+			String a = String.join(" ", java.util.Arrays.asList(words).subList(0, cut));
+			String b = String.join(" ", java.util.Arrays.asList(words).subList(cut, words.length));
+			int widest = Math.max(width.applyAsInt(a), width.applyAsInt(b));
+			if (widest <= room && widest < bestWidest)
+			{
+				bestWidest = widest;
+				best = a + "\n" + b;
+			}
+		}
+		if (best == null)
+		{
+			return null;
+		}
+		lines.addAll(java.util.Arrays.asList(best.split("\n")));
+		return lines;
+	}
+
+	private static void header(Graphics2D g, Title title, String player, int height)
 	{
 		int md = 46;
 		int mx = PAD;
-		int my = (HEADER - md) / 2 + 3;
+		int my = (height - md) / 2 + 3;
 		g.setPaint(new RadialGradientPaint(mx + md / 2f, my + md / 3f, md * 0.7f, new float[]{0, 1},
 			new Color[]{Theme.mix(Theme.CARD_TOP, Theme.GOLD_DIM, 0.35), Theme.INK_DEEP}));
 		g.fill(new Ellipse2D.Float(mx, my, md, md));
@@ -208,23 +353,27 @@ public final class KitSheet
 		Sigil.paint(g, mx + 10, my + 10, md - 20);
 
 		int tx = mx + md + 12;
-		int room = WIDTH - tx - PAD;
+		// The kicker and the name sit together, centred on the medallion however many lines the name takes.
+		int top = (HEADER - md) / 2 + 3;
 		g.setFont(Theme.small());
 		FontMetrics small = g.getFontMetrics();
 		g.setColor(Theme.TEXT_MUTED);
-		String kicker = player == null ? "KIT CARD" : Ui.clip(player.toUpperCase(Locale.ENGLISH), small, room - 80) + "'S KIT";
-		g.drawString(kicker, tx, my + 12);
+		String kicker = player == null ? "KIT CARD" : Ui.clip(player.toUpperCase(Locale.ENGLISH), small, ROOM - 80) + "'S KIT";
+		g.drawString(kicker, tx, top + 12);
 		g.setFont(Theme.title());
 		FontMetrics bold = g.getFontMetrics();
-		String name = kit.toUpperCase(Locale.ENGLISH);
-		if (bold.stringWidth(name) * 2 + 2 <= room)
+		for (int i = 0; i < title.lines.size(); i++)
 		{
-			// Short names in the crest's doubled figure lettering, the way the game draws big text.
-			Crest.paintLarge(g, name, tx, my + 18, Theme.GOLD);
-		}
-		else
-		{
-			Ui.shadowed(g, Ui.clip(kit, bold, room), tx, my + 34, Theme.GOLD_BRIGHT);
+			String line = title.lines.get(i);
+			if (title.large)
+			{
+				// The crest's doubled figure lettering, the way the game draws big text.
+				Crest.paintLarge(g, line, tx, top + 18 + i * LARGE_LINE, Theme.GOLD);
+			}
+			else
+			{
+				Ui.shadowed(g, Ui.clip(line, bold, ROOM), tx, top + 34 + i * BOLD_LINE, Theme.GOLD_BRIGHT);
+			}
 		}
 	}
 

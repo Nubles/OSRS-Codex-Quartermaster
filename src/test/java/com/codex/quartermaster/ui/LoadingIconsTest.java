@@ -85,4 +85,38 @@ public class LoadingIconsTest
 		current[0].loaded();
 		assertEquals(2, repaints.get());
 	}
+
+	@Test
+	public void aCardWaitsForEveryPictureThenDrawsOnce()
+	{
+		AsyncBufferedImage whip = new AsyncBufferedImage(null, 36, 32, BufferedImage.TYPE_INT_ARGB);
+		AsyncBufferedImage shark = new AsyncBufferedImage(null, 36, 32, BufferedImage.TYPE_INT_ARGB);
+		LoadingIcons icons = new LoadingIcons(id -> id == 4151 ? whip : shark, Runnable::run);
+		AtomicInteger drawn = new AtomicInteger();
+		// Two slots of sharks and a whip: the card waits on two pictures, not three.
+		icons.whenLoaded(java.util.Arrays.asList(4151, 385, 385), drawn::incrementAndGet);
+		assertEquals(0, drawn.get());
+		whip.loaded();
+		assertEquals("one picture is still on its way", 0, drawn.get());
+		shark.loaded();
+		assertEquals(1, drawn.get());
+		// Once they are in, a second card is drawn at once.
+		icons.whenLoaded(java.util.Arrays.asList(4151, 385), drawn::incrementAndGet);
+		assertEquals(2, drawn.get());
+	}
+
+	@Test
+	public void aCardIsNotTurnedAwayByRowsCrowdingAPicture()
+	{
+		AsyncBufferedImage image = new AsyncBufferedImage(null, 36, 32, BufferedImage.TYPE_INT_ARGB);
+		LoadingIcons icons = new LoadingIcons(id -> image, Runnable::run);
+		for (int i = 0; i < LoadingIcons.MOST_WAITING + 10; i++)
+		{
+			icons.icon(4151, new AtomicInteger()::incrementAndGet);
+		}
+		AtomicInteger drawn = new AtomicInteger();
+		icons.whenLoaded(java.util.Collections.singletonList(4151), drawn::incrementAndGet);
+		image.loaded();
+		assertEquals(1, drawn.get());
+	}
 }

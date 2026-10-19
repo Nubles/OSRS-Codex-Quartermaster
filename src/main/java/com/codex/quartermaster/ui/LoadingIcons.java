@@ -1,6 +1,7 @@
 package com.codex.quartermaster.ui;
 
 import java.awt.image.BufferedImage;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.LinkedHashSet;
 import java.util.Map;
@@ -49,10 +50,48 @@ public final class LoadingIcons implements ItemIcons
 	public BufferedImage icon(int itemId, Runnable onLoaded)
 	{
 		AsyncBufferedImage image = source.apply(itemId);
-		if (image == null || onLoaded == null || arrived.contains(image))
+		if (image != null && onLoaded != null && !arrived.contains(image))
 		{
-			return image;
+			watch(image, onLoaded, true);
 		}
+		return image;
+	}
+
+	@Override
+	public void whenLoaded(Collection<Integer> itemIds, Runnable then)
+	{
+		Set<AsyncBufferedImage> pending = Collections.newSetFromMap(new java.util.IdentityHashMap<>());
+		for (int id : itemIds)
+		{
+			AsyncBufferedImage image = source.apply(id);
+			if (image != null && !arrived.contains(image))
+			{
+				pending.add(image);
+			}
+		}
+		if (pending.isEmpty())
+		{
+			then.run();
+			return;
+		}
+		// One callback for every picture the card waits on; it runs then when the last is in.
+		int[] left = {pending.size()};
+		Runnable one = () ->
+		{
+			if (--left[0] == 0)
+			{
+				then.run();
+			}
+		};
+		for (AsyncBufferedImage image : pending)
+		{
+			// Never turned away by the bound on rows: a card waits on each picture just once.
+			watch(image, one, false);
+		}
+	}
+
+	private void watch(AsyncBufferedImage image, Runnable onLoaded, boolean bounded)
+	{
 		Set<Runnable> queue = waiting.get(image);
 		if (queue == null)
 		{
@@ -71,10 +110,9 @@ public final class LoadingIcons implements ItemIcons
 			}));
 		}
 		// A row painting while the picture loads asks each frame; it need only be told once.
-		if (queue.size() < MOST_WAITING)
+		if (!bounded || queue.size() < MOST_WAITING)
 		{
 			queue.add(onLoaded);
 		}
-		return image;
 	}
 }
