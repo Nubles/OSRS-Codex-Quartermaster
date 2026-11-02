@@ -104,6 +104,10 @@ Each save writes a documented entry: RS profile config, group `codexquartermaste
 
 Codex Quartermaster only reads what the game already shows you: your bank and its potion storage, inventory, worn gear, rune pouch and quiver, and RuneLite's own item prices. The bank outlines only draw over items. Show in bank only filters what the bank window displays, through RuneLite's own Bank Tags plugin, as a tag tab would. It does not click, withdraw, change menus, or send anything over the network.
 
+## Field notes
+
+An optional setting, **Keep field notes** (under Field notes, off by default), writes a plain record of what Quartermaster reads and decides to its own folder in `.runelite/plugin-data` on your computer, one line at a time. It is for checking the plugin's guesses against real play: when something looks wrong, the notes show what it saw and why it chose what it did. Other players' chat is never written down, it stays on your computer, and nothing is sent anywhere.
+
 ## Development
 
 ```bash
