@@ -2,9 +2,11 @@ package com.codex.quartermaster;
 
 import com.codex.quartermaster.core.BankView;
 import com.codex.quartermaster.core.FromTarget;
+import com.codex.quartermaster.core.InventoryCheck;
 import com.codex.quartermaster.core.Kit;
 import com.codex.quartermaster.core.KitBook;
 import com.codex.quartermaster.core.Loadout;
+import com.codex.quartermaster.core.Need;
 import com.codex.quartermaster.core.Packing;
 import com.codex.quartermaster.core.Plan;
 import com.codex.quartermaster.core.Prices;
@@ -13,10 +15,14 @@ import com.codex.quartermaster.core.Reminder;
 import com.codex.quartermaster.core.Returns;
 import com.codex.quartermaster.core.Salvage;
 import com.codex.quartermaster.core.SharedBank;
+import com.codex.quartermaster.core.Supplies;
+import com.codex.quartermaster.core.Supply;
 import com.codex.quartermaster.core.Trip;
 import com.codex.quartermaster.core.Tuning;
 import com.codex.quartermaster.core.Usage;
+import com.codex.quartermaster.core.Variants;
 import com.codex.quartermaster.core.Warning;
+import com.codex.quartermaster.overlay.InventoryMarks;
 import com.codex.quartermaster.overlay.SupplyPlaque;
 import com.codex.quartermaster.overlay.WithdrawOverlay;
 import com.codex.quartermaster.ui.Actions;
@@ -79,6 +85,7 @@ import net.runelite.client.events.ConfigChanged;
 import net.runelite.client.events.RuneScapeProfileChanged;
 import net.runelite.client.game.ItemManager;
 import net.runelite.client.game.ItemStats;
+import net.runelite.client.game.ItemVariationMapping;
 import net.runelite.client.plugins.Plugin;
 import net.runelite.client.plugins.PluginDependency;
 import net.runelite.client.plugins.bank.BankSearch;
@@ -172,6 +179,9 @@ public class CodexQuartermasterPlugin extends Plugin
 
 	private final SupplyPlaque plaque = new SupplyPlaque();
 	private WithdrawOverlay withdrawOverlay;
+	private InventoryMarks inventoryMarks;
+	/** Items whose partly used forms have been looked for, so each is looked up once. */
+	private final Set<Integer> variantsTried = new HashSet<>();
 	/** The kit book as last written, so it is only written again when it changes. */
 	private String lastBook;
 	private final Map<Integer, String> names = new HashMap<>();
@@ -230,6 +240,8 @@ public class CodexQuartermasterPlugin extends Plugin
 		overlayManager.add(plaque);
 		withdrawOverlay = new WithdrawOverlay(itemManager);
 		overlayManager.add(withdrawOverlay);
+		inventoryMarks = new InventoryMarks(itemManager);
+		overlayManager.add(inventoryMarks);
 		packView = BankView.EMPTY;
 		tagManager.registerTag(BankView.TAG, id -> packView.contains(itemManager.canonicalize(id)));
 		clientThread.invokeLater(() ->
@@ -262,6 +274,8 @@ public class CodexQuartermasterPlugin extends Plugin
 		overlayManager.remove(plaque);
 		overlayManager.remove(withdrawOverlay);
 		withdrawOverlay.show(null);
+		overlayManager.remove(inventoryMarks);
+		inventoryMarks.show(null);
 		clientToolbar.removeNavigation(navButton);
 		tagManager.unregisterTag(BankView.TAG);
 		clientThread.invokeLater(() ->
@@ -892,6 +906,7 @@ public class CodexQuartermasterPlugin extends Plugin
 		{
 			plaque.show(null, null, null);
 			withdrawOverlay.show(null);
+			inventoryMarks.show(null);
 			if (target != null)
 			{
 				SwingUtilities.invokeLater(() -> target.update(View.loggedOut()));
@@ -899,6 +914,7 @@ public class CodexQuartermasterPlugin extends Plugin
 			return;
 		}
 		boolean measured = config.measured();
+		learnVariants(Collections.emptySet());
 		Kit active = quarters.activeKit();
 		List<Plan> plans = new ArrayList<>();
 		Plan chosen = null;
@@ -930,6 +946,9 @@ public class CodexQuartermasterPlugin extends Plugin
 		boolean packAtBank = loggedIn && bankOpen && packing != null && !packing.getItems().isEmpty() && config.packCheck();
 		withdrawOverlay.show(loggedIn && bankOpen && packing != null && config.highlightBank() && packingNow(packing)
 			? packing.withdrawals() : null);
+		InventoryCheck putBack = loggedIn && bankOpen && packing != null && packing.isUnderway() ? checkInventory(packing) : InventoryCheck.NONE;
+		inventoryMarks.show(config.markInventory() ? putBack : null);
+		putBack.getMarks().values().forEach(m -> name(m.getItemId()));
 		BankView before = packView;
 		packView = loggedIn && bankOpen ? BankView.of(packing) : BankView.EMPTY;
 		if (packView.isEmpty())
@@ -1000,7 +1019,8 @@ public class CodexQuartermasterPlugin extends Plugin
 			.nameOnCard(config.nameOnCard())
 			.ironman(ironman())
 			.fromTarget(build, fromRoadmap)
-			.packing(packAtBank ? packing : null, usage == null ? 0 : usage.typicalDuration());
+			.packing(packAtBank ? packing : null, usage == null ? 0 : usage.typicalDuration())
+			.putBack(packAtBank ? putBack : null);
 
 		CodexQuartermasterConfig.PlaqueMode mode = config.plaque();
 		boolean showPlaque = loggedIn && quarters.hasBank() && chosen != null
@@ -1037,6 +1057,79 @@ public class CodexQuartermasterPlugin extends Plugin
 	 * inventory has room for what is still to take. A visit to drop off a full inventory of loot
 	 * is left unmarked until there is room. Client thread only.
 	 */
+	/**
+	 * Learns the partly used forms of every kit's own dosed items, and of the given items, from
+	 * RuneLite's item variation table, so a sipped potion counts for its doses. Each item is looked
+	 * up once. Client thread only: item names are read from the game.
+	 */
+	private void learnVariants(Set<Integer> more)
+	{
+		Set<Integer> ids = new HashSet<>(more);
+		for (Kit kit : quarters.allKits())
+		{
+			for (Need need : kit.getNeeds())
+			{
+				Supply s = Supplies.get(need.getSupply());
+				if (s != null && s.isItem())
+				{
+					ids.add(s.getIcon());
+				}
+			}
+		}
+		Variants.Lookup lookup = new Variants.Lookup()
+		{
+			@Override
+			public String name(int itemId)
+			{
+				return itemManager.getItemComposition(itemId).getName();
+			}
+
+			@Override
+			public boolean wearable(int itemId)
+			{
+				ItemStats stats = itemManager.getItemStats(itemId);
+				return stats != null && stats.isEquipable();
+			}
+		};
+		for (int id : ids)
+		{
+			if (id <= 0 || Supplies.pooled(id) || !variantsTried.add(id))
+			{
+				continue;
+			}
+			List<Integer> forms = new ArrayList<>();
+			for (int v : ItemVariationMapping.getVariations(ItemVariationMapping.map(id)))
+			{
+				ItemComposition c = itemManager.getItemComposition(v);
+				// Bank placeholders and notes share the names; only the items themselves are forms.
+				if (c.getPlaceholderTemplateId() == -1 && c.getNote() == -1)
+				{
+					forms.add(v);
+				}
+			}
+			Variants.learn(Variants.family(id, forms, lookup));
+		}
+	}
+
+	/** The inventory, slot by slot, against the kit being packed. */
+	private InventoryCheck checkInventory(Packing packing)
+	{
+		ItemContainer inv = client.getItemContainer(InventoryID.INV);
+		if (inv == null)
+		{
+			return InventoryCheck.NONE;
+		}
+		Item[] items = inv.getItems();
+		int[] ids = new int[items.length];
+		int[] qty = new int[items.length];
+		for (int i = 0; i < items.length; i++)
+		{
+			ids[i] = items[i].getId();
+			qty[i] = items[i].getQuantity();
+		}
+		return InventoryCheck.of(packing, ids, qty, this::isSupply, this::stacks);
+	}
+
 	private boolean packingNow(Packing packing)
 	{
 		Map<Integer, Long> withdrawals = packing.withdrawals();
@@ -1199,6 +1292,7 @@ public class CodexQuartermasterPlugin extends Plugin
 					return;
 				}
 				carried = readCarried();
+				learnVariants(carried.keySet());
 				Kit kit = quarters.capture(Quarters.fitName(name), carried,
 					CodexQuartermasterPlugin.this::isSupply, id -> itemManager.getItemComposition(id).isStackable());
 				if (kit == null)

@@ -127,6 +127,18 @@ public interface CodexQuartermasterConfig extends Config
 	}
 
 	@ConfigItem(
+		keyName = "markInventory",
+		name = "Mark what to put back",
+		description = "Mark the inventory items the chosen kit does not take, and any packed past its amount, while you pack it",
+		position = 2,
+		section = atTheBank
+	)
+	default boolean markInventory()
+	{
+		return true;
+	}
+
+	@ConfigItem(
 		keyName = "nameOnCard",
 		name = "Name on cards",
 		description = "Write your character's name on the kit card; turn off to share the card without it",

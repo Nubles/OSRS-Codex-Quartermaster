@@ -20,9 +20,18 @@ public final class Supply
 	private final Map<Integer, Integer> units;
 	/** Each item's full form: the 4-dose potion for its lower doses, a whole cake for a slice. */
 	private final Map<Integer, Integer> full;
+	/** For a dosed item of its own, its partly used forms, counted for their share; else null. */
+	private final Variants.Family family;
 
 	Supply(String key, String name, String unit, int icon, Map<Integer, Integer> units, Map<Integer, Integer> full)
 	{
+		this(key, name, unit, icon, units, full, null);
+	}
+
+	private Supply(String key, String name, String unit, int icon, Map<Integer, Integer> units, Map<Integer, Integer> full,
+		Variants.Family family)
+	{
+		this.family = family;
 		this.key = key;
 		this.name = name;
 		this.unit = unit;
@@ -31,11 +40,15 @@ public final class Supply
 		this.full = Collections.unmodifiableMap(new LinkedHashMap<>(full));
 	}
 
-	/** A supply that is one item and nothing else, such as a teleport tablet or a rune. */
+	/**
+	 * A supply that is one item and nothing else, such as a teleport tablet or a rune. A dosed item
+	 * also counts its partly used forms for their share, once {@link Variants} has learnt them: the
+	 * item is still what is withdrawn and bought.
+	 */
 	public static Supply item(int itemId)
 	{
 		Map<Integer, Integer> one = Collections.singletonMap(itemId, 1);
-		return new Supply(itemKey(itemId), null, null, itemId, one, Collections.singletonMap(itemId, itemId));
+		return new Supply(itemKey(itemId), null, null, itemId, one, Collections.singletonMap(itemId, itemId), Variants.of(itemId));
 	}
 
 	public static String itemKey(int itemId)
@@ -89,10 +102,26 @@ public final class Supply
 		return units.containsKey(itemId) && fullForm(itemId) == itemId;
 	}
 
-	/** How much of this supply a set of items holds, in units. */
+	/** The partly used forms that count toward this supply for their share, or empty. */
+	public Map<Integer, Integer> getPartial()
+	{
+		return family == null ? Collections.emptyMap() : family.getPartial();
+	}
+
+	/** Whether an item counts toward this supply, whole or for its share. */
+	public boolean counts(int itemId)
+	{
+		return units.containsKey(itemId) || getPartial().containsKey(itemId);
+	}
+
+	/**
+	 * How much of this supply a set of items holds, in units. Partly used forms are added up by
+	 * their doses and count only in whole items' worth, rounded down: two super strength(2) are one
+	 * super strength(4), and a lone (3) is not yet one.
+	 */
 	public long count(Map<Integer, Long> items)
 	{
-		long total = 0;
+		long total = family == null ? 0 : partialWorth(items);
 		for (Map.Entry<Integer, Integer> e : units.entrySet())
 		{
 			Long qty = items.get(e.getKey());
@@ -104,5 +133,20 @@ public final class Supply
 			}
 		}
 		return total;
+	}
+
+	private long partialWorth(Map<Integer, Long> items)
+	{
+		long doses = 0;
+		for (Map.Entry<Integer, Integer> e : family.getPartial().entrySet())
+		{
+			Long qty = items.get(e.getKey());
+			if (qty != null && qty > 0)
+			{
+				// Held from overflowing as count() is; no real stack comes near.
+				doses = qty > (Long.MAX_VALUE - doses) / e.getValue() ? Long.MAX_VALUE : doses + qty * e.getValue();
+			}
+		}
+		return doses / family.getDoses();
 	}
 }

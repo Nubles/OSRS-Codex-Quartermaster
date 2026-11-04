@@ -49,6 +49,8 @@ public final class Returns
 			if (s != null)
 			{
 				kitItems.addAll(s.getUnits().keySet());
+				// A potion sipped to a (2) is the supply coming back, not loot.
+				kitItems.addAll(s.getPartial().keySet());
 			}
 		}
 		Set<Integer> ids = new HashSet<>(start.keySet());
