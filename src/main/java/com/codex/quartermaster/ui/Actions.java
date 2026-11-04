@@ -39,6 +39,11 @@ public interface Actions
 	{
 	}
 
+	/** Plan another boat on the Boats page, or null to follow the boats the player owns. */
+	default void planBoat(com.codex.quartermaster.core.Shipyard.Boat boat)
+	{
+	}
+
 	default void showInBank()
 	{
 	}

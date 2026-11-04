@@ -54,6 +54,13 @@ Part of the **Codex** suite of RuneLite plugins. They share one look: warm ink, 
   <img src="docs/screenshots/kit-card.png" width="330" alt="The kit card">
 </p>
 
+**Boats.** The Boats page is a roadmap for your boat's hull, keel, helm and mast and sails. For each part it shows the best tier your Sailing and Construction levels allow and the materials your bank still lacks for it. It also shows the next tier, the levels it waits on and what that tier will take. **To build every part** adds the shortfalls into one shopping list, with a material two parts share counted once. It plans the biggest boat you own (or pick Raft, Skiff or Sloop), and **Moorings** lists each boat with the port it was left at. Levels and materials come from the wiki's Hull, Keel, Helm and Mast and sails pages. Facilities are not planned yet, and the page does not read which tier is already fitted.
+
+<p align="center">
+  <img src="docs/screenshots/boats-skiff.png" width="225" alt="Boats: a skiff's roadmap at Sailing 34">
+  <img src="docs/screenshots/boats-sloop.png" width="225" alt="Boats: a sloop's roadmap and three moorings">
+</p>
+
 **Plaque and chat.** A slim plaque in the game view shows the trips left and what runs out first. Mid-pack at the bank, it says what is still to withdraw. When you leave with only a few trips of supplies left, a chat line says which runs out and what restocking costs.
 
 <p align="center">
