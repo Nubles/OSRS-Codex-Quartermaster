@@ -1,6 +1,7 @@
 package com.codex.quartermaster;
 
 import com.codex.quartermaster.core.BankView;
+import com.codex.quartermaster.core.FromTarget;
 import com.codex.quartermaster.core.Kit;
 import com.codex.quartermaster.core.KitBook;
 import com.codex.quartermaster.core.Loadout;
@@ -174,6 +175,9 @@ public class CodexQuartermasterPlugin extends Plugin
 	/** The kit book as last written, so it is only written again when it changes. */
 	private String lastBook;
 	private final Map<Integer, String> names = new HashMap<>();
+	/** Kit from target: the preset picked on the panel this session, or null for the default. */
+	private String buildTarget;
+	private final Map<Integer, Boolean> stackable = new HashMap<>();
 	/** Each shopping item's Grand Exchange buy limit; absent until the client knows it. */
 	private final Map<Integer, Integer> limits = new HashMap<>();
 	private final Prices prices = id -> itemManager.getItemPrice(id);
@@ -963,6 +967,27 @@ public class CodexQuartermasterPlugin extends Plugin
 		}
 		List<Tuning.Advice> tuning = Tuning.of(active, usage, carried, quarters.getBank());
 		tuning.forEach(a -> name(a.getItem()));
+		FromTarget.Build build = null;
+		boolean fromRoadmap = false;
+		if (quarters.hasBank())
+		{
+			String roadmap = configManager.getConfiguration(FromTarget.ROADMAP_GROUP, FromTarget.ROADMAP_TARGET);
+			Kit targetKit = FromTarget.pick(quarters.allKits(), buildTarget, roadmap, active);
+			if (targetKit != null)
+			{
+				build = FromTarget.of(targetKit, quarters.held(carried), prices, this::stacks);
+				fromRoadmap = FromTarget.matches(targetKit, roadmap);
+				for (FromTarget.Row row : build.getRows())
+				{
+					name(row.getSupply().getIcon());
+					row.getTake().keySet().forEach(this::name);
+					if (row.getBuyItem() > 0)
+					{
+						name(row.getBuyItem());
+					}
+				}
+			}
+		}
 		Player player = client.getLocalPlayer();
 		View.State state = !quarters.hasBank() ? View.State.WAITING_FOR_BANK : View.State.READY;
 		View view = new View(state, loggedIn && player != null ? player.getName() : null, chosen, plans, trips,
@@ -974,6 +999,7 @@ public class CodexQuartermasterPlugin extends Plugin
 			.limits(new HashMap<>(limits))
 			.nameOnCard(config.nameOnCard())
 			.ironman(ironman())
+			.fromTarget(build, fromRoadmap)
 			.packing(packAtBank ? packing : null, usage == null ? 0 : usage.typicalDuration());
 
 		CodexQuartermasterConfig.PlaqueMode mode = config.plaque();
@@ -1051,6 +1077,12 @@ public class CodexQuartermasterPlugin extends Plugin
 		return names.computeIfAbsent(itemId, id -> itemManager.getItemComposition(id).getName());
 	}
 
+	/** Whether an item stacks in the inventory, read once per item. Client thread. */
+	private boolean stacks(int itemId)
+	{
+		return stackable.computeIfAbsent(itemId, id -> itemManager.getItemComposition(id).isStackable());
+	}
+
 	/** Names a shopping item and notes its Grand Exchange buy limit, read once per item. */
 	private void named(int itemId)
 	{
@@ -1095,6 +1127,52 @@ public class CodexQuartermasterPlugin extends Plugin
 					unsaved = true;
 					publish();
 				}
+			});
+		}
+
+		@Override
+		public void buildFor(String kitId)
+		{
+			clientThread.invokeLater(() ->
+			{
+				buildTarget = kitId;
+				publish();
+			});
+		}
+
+		@Override
+		public void saveBuild()
+		{
+			Quarters q = quarters;
+			if (q == null)
+			{
+				return;
+			}
+			Kit target = FromTarget.pick(q.allKits(), buildTarget,
+				configManager.getConfiguration(FromTarget.ROADMAP_GROUP, FromTarget.ROADMAP_TARGET), q.activeKit());
+			String suggested = Quarters.fitName((target == null ? "My" : target.getName()) + " from bank");
+			Object answer = JOptionPane.showInputDialog(panel, "Name this kit:", "Save as a kit",
+				JOptionPane.PLAIN_MESSAGE, null, null, suggested);
+			if (answer == null || answer.toString().trim().isEmpty())
+			{
+				return;
+			}
+			String name = answer.toString().trim();
+			clientThread.invokeLater(() ->
+			{
+				if (quarters == null || !quarters.hasBank())
+				{
+					return;
+				}
+				Kit kit = FromTarget.pick(quarters.allKits(), buildTarget,
+					configManager.getConfiguration(FromTarget.ROADMAP_GROUP, FromTarget.ROADMAP_TARGET), quarters.activeKit());
+				if (kit == null || quarters.adopt(FromTarget.of(kit, quarters.held(carried), prices, CodexQuartermasterPlugin.this::stacks), name) == null)
+				{
+					return;
+				}
+				unsaved = true;
+				save();
+				publish();
 			});
 		}
 

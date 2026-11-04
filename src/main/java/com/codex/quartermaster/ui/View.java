@@ -1,5 +1,6 @@
 package com.codex.quartermaster.ui;
 
+import com.codex.quartermaster.core.FromTarget;
 import com.codex.quartermaster.core.Packing;
 import com.codex.quartermaster.core.Plan;
 import com.codex.quartermaster.core.Returns;
@@ -52,6 +53,10 @@ public final class View
 	boolean nameOnCard = true;
 	/** The Grand Exchange's four-hour buy limit of each item on the shopping lists; absent when unknown. */
 	Map<Integer, Integer> limits = Collections.emptyMap();
+	/** Kit from target: the best trip the bank packs for a target, or null. */
+	FromTarget.Build build;
+	/** The build's target is the one Codex Gear Roadmap is set to. */
+	boolean buildFromRoadmap;
 
 	/**
 	 * @param active the chosen kit's plan, or null when no account is open
@@ -118,6 +123,17 @@ public final class View
 	{
 		Integer l = limits.get(itemId);
 		return l == null ? 0 : l;
+	}
+
+	/**
+	 * @param build the best trip the bank packs for a target, or null
+	 * @param fromRoadmap the target is Codex Gear Roadmap's
+	 */
+	public View fromTarget(FromTarget.Build build, boolean fromRoadmap)
+	{
+		this.build = build;
+		buildFromRoadmap = fromRoadmap;
+		return this;
 	}
 
 	public View nameOnCard(boolean value)

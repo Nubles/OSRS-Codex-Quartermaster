@@ -29,6 +29,16 @@ public interface Actions
 	void tune(String kitId);
 
 	/** Show the bank filtered to what is still to pack. */
+	/** Kit from target: builds the trip for another target, by kit id. */
+	default void buildFor(String kitId)
+	{
+	}
+
+	/** Kit from target: saves the trip built as a kit of the player's own. */
+	default void saveBuild()
+	{
+	}
+
 	default void showInBank()
 	{
 	}

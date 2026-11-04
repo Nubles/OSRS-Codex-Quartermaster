@@ -270,6 +270,26 @@ public class Quarters
 		return kit;
 	}
 
+	/**
+	 * Saves a kit built for a target (see {@link FromTarget.Build#toKit}) as a new kit of the
+	 * player's own, and chooses it.
+	 *
+	 * @return the kit saved, or null when the build has nothing to take
+	 */
+	public Kit adopt(FromTarget.Build build, String name)
+	{
+		Kit kit = build.toKit("kit:" + (saved + 1), fitName(name));
+		if (kit.getNeeds().isEmpty())
+		{
+			return null;
+		}
+		saved++;
+		kit.repair();
+		kits.add(kit);
+		active = kit.getId();
+		return kit;
+	}
+
 	/** Forgets a saved kit and everything measured for it. Presets cannot be forgotten. */
 	public boolean forget(String id)
 	{
