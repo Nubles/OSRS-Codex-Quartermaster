@@ -1,5 +1,6 @@
 package com.codex.quartermaster;
 
+import com.codex.quartermaster.notes.FieldNotes;
 import com.codex.quartermaster.core.BankView;
 import com.codex.quartermaster.core.FromTarget;
 import com.codex.quartermaster.core.Kit;
@@ -154,6 +155,9 @@ public class CodexQuartermasterPlugin extends Plugin
 	@Inject
 	private CodexQuartermasterConfig config;
 
+	/** The optional local record of what the plugin read and decided. */
+	private FieldNotes notes;
+
 	/** RuneLite's Bank Tags, through which the bank can be shown filtered to what is still to pack. */
 	@Inject
 	private TagManager tagManager;
@@ -218,6 +222,11 @@ public class CodexQuartermasterPlugin extends Plugin
 	@Override
 	protected void startUp()
 	{
+		notes = new FieldNotes(this::getPluginDirectory, gson);
+		if (config.fieldNotes())
+		{
+			notes.open();
+		}
 		ItemIcons icons = new LoadingIcons(itemManager::getImage);
 		panel = new QuartermasterPanel(icons, new PanelActions());
 		navButton = NavigationButton.builder()
@@ -259,6 +268,11 @@ public class CodexQuartermasterPlugin extends Plugin
 	@Override
 	protected void shutDown()
 	{
+		if (notes != null)
+		{
+			notes.shutdown();
+			notes = null;
+		}
 		overlayManager.remove(plaque);
 		overlayManager.remove(withdrawOverlay);
 		withdrawOverlay.show(null);
@@ -346,6 +360,18 @@ public class CodexQuartermasterPlugin extends Plugin
 	@Subscribe
 	public void onConfigChanged(ConfigChanged event)
 	{
+		if (CodexQuartermasterConfig.GROUP.equals(event.getGroup()) && "fieldNotes".equals(event.getKey()) && notes != null)
+		{
+			if (config.fieldNotes())
+			{
+				notes.open();
+			}
+			else
+			{
+				notes.close();
+			}
+			return;
+		}
 		if (CodexQuartermasterConfig.GROUP.equals(event.getGroup()))
 		{
 			dirty = true;
@@ -916,6 +942,28 @@ public class CodexQuartermasterPlugin extends Plugin
 				line.getHeld().keySet().forEach(this::name);
 				line.getBuys().forEach(b -> named(b.getItemId()));
 			}
+		}
+		if (notes.isOpen() && chosen != null)
+		{
+			// The active kit's plan: what each supply has, needs a trip and is short, so a wrong count can be traced.
+			com.google.gson.JsonObject n = new com.google.gson.JsonObject();
+			n.addProperty("kit", active.getName());
+			n.addProperty("trips", chosen.trips());
+			n.addProperty("measured", measured);
+			com.google.gson.JsonArray lines = new com.google.gson.JsonArray();
+			for (Plan.Line line : chosen.getLines())
+			{
+				com.google.gson.JsonObject o = new com.google.gson.JsonObject();
+				o.addProperty("supply", line.getSupply().getName());
+				o.addProperty("have", line.getHave());
+				o.addProperty("perTrip", line.getPerTrip());
+				o.addProperty("trips", line.getTrips());
+				o.addProperty("short", line.getShort());
+				o.addProperty("stored", line.getStored());
+				lines.add(o);
+			}
+			n.add("lines", lines);
+			notes.noteChanged("plan", n);
 		}
 		Usage usage = quarters.usage(active.getId());
 		Packing packing = quarters.hasBank() ? Packing.check(active, carried, quarters.getBank(), quarters.getStored(), usage) : null;
