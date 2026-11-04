@@ -799,6 +799,11 @@ public class QuartermasterPanel extends PluginPanel
 		save.add(buttons, BorderLayout.SOUTH);
 		stack.add(save);
 
+		if (view.build != null)
+		{
+			addFromTarget(stack);
+		}
+
 		boolean anySaved = false;
 		for (Plan plan : view.plans)
 		{
@@ -848,6 +853,29 @@ public class QuartermasterPanel extends PluginPanel
 			stack.add(more);
 		}
 		replace(kits, stack);
+	}
+
+	/** Kit from target: the trip the bank packs for a target, and the button that saves it. */
+	private void addFromTarget(StackPanel stack)
+	{
+		List<String> targets = new java.util.ArrayList<>();
+		for (Plan plan : view.plans)
+		{
+			if (plan.getKit().isPreset())
+			{
+				targets.add(plan.getKit().getId());
+			}
+		}
+		String current = view.build.getTarget().getId();
+		stack.add(new TargetCard(view.build, view, icons, targets.size() < 2 ? null : step ->
+		{
+			int at = Math.max(0, targets.indexOf(current));
+			actions.buildFor(targets.get(Math.floorMod(at + step, targets.size())));
+		}));
+		JPanel buttons = new JPanel(new FlowLayout(FlowLayout.LEFT, 0, 0));
+		buttons.setOpaque(false);
+		buttons.add(new CodexButton("Save as a kit", true, actions::saveBuild));
+		stack.add(buttons);
 	}
 
 	static Card note(String title, String text)

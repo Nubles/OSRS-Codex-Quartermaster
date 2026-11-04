@@ -32,6 +32,13 @@ Part of the **Codex** suite of RuneLite plugins. They share one look: warm ink, 
 
 **Kits.** Nine presets ship with the plugin: Vorkath, Zulrah, Barrows, General Graardor, Vardorvis, Nex, Theatre of Blood, a slayer task and Wintertodt. Withdraw what you take and press **Save my inventory as a kit** to add your own. When you pack it again, the Quartermaster recognises it and switches to it. Rename a kit, or right-click a supply to set its amount or remove it.
 
+**Kit from target.** On the Kits page, pick a target with the arrows (it starts on the boss Codex Gear Roadmap is set to, when a preset matches) and the Quartermaster packs the best trip your bank can make for it: the inventory slot by slot, then every supply. Food that heals most a bite and the fullest potions go in first. A supply packed from something weaker than the best on sale is marked as a downgrade with the slots it costs (17 lobsters where 10 manta rays would do) and what buying the best would cost; a supply your bank can't cover for one trip is marked with what to buy, in what you already use. Items to buy show faintly in the inventory, rimmed in red. **Save as a kit** keeps the trip, item by item, as a kit of your own.
+
+<p align="center">
+  <img src="docs/screenshots/from-target-vorkath.png" width="225" alt="Kit from target: Vorkath from a mid-level bank">
+  <img src="docs/screenshots/from-target-zulrah.png" width="225" alt="Kit from target: Zulrah, all but one supply ready">
+</p>
+
 **Learning from your trips.** A trip runs from closing the bank to opening it again. What you set out with and what comes back are compared, supply by supply. Deaths, quick bank shuffles and anything that changes while you are logged out are not counted. After five trips with a kit of your own, **Pack to your trips** suggests amounts that cover nine trips in ten, and how many inventory slots that frees.
 
 **Kit card.** **Copy kit card** copies a picture of the kit to paste into a chat: the inventory a trip packs, the trips your bank holds, what a trip costs and what it earns.
@@ -58,7 +65,7 @@ Part of the **Codex** suite of RuneLite plugins. They share one look: warm ink, 
 
 ## With other Codex plugins
 
-The Quartermaster works on its own. If [Codex Bank Steward](https://github.com/Nubles/OSRS-Codex-Bank-Steward) saved your bank at a visit the Quartermaster missed (it was just installed, or turned off), that newer bank is counted, and the panel says whose it is until you open your own. Nothing else is read from other plugins.
+The Quartermaster works on its own. If [Codex Bank Steward](https://github.com/Nubles/OSRS-Codex-Bank-Steward) saved your bank at a visit the Quartermaster missed (it was just installed, or turned off), that newer bank is counted, and the panel says whose it is until you open your own. Kit from target reads the target [Codex Gear Roadmap](https://github.com/Nubles/OSRS-Codex-Gear-Roadmap) is set to (its `target` setting) to pick where to start. Nothing else is read from other plugins.
 
 The Quartermaster saves your kits in a stable shape for others to read. Codex Bank Steward uses it to keep your kits' supplies off its sell list; Codex Guardian and Codex Provisioner read it too.
 
