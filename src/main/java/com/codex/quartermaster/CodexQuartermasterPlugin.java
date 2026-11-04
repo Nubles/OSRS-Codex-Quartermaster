@@ -6,6 +6,7 @@ import com.codex.quartermaster.core.InventoryCheck;
 import com.codex.quartermaster.core.Kit;
 import com.codex.quartermaster.core.KitBook;
 import com.codex.quartermaster.core.Loadout;
+import com.codex.quartermaster.core.Moorings;
 import com.codex.quartermaster.core.Need;
 import com.codex.quartermaster.core.Packing;
 import com.codex.quartermaster.core.Plan;
@@ -15,6 +16,7 @@ import com.codex.quartermaster.core.Reminder;
 import com.codex.quartermaster.core.Returns;
 import com.codex.quartermaster.core.Salvage;
 import com.codex.quartermaster.core.SharedBank;
+import com.codex.quartermaster.core.Shipyard;
 import com.codex.quartermaster.core.Supplies;
 import com.codex.quartermaster.core.Supply;
 import com.codex.quartermaster.core.Trip;
@@ -59,13 +61,16 @@ import net.runelite.api.ItemContainer;
 import net.runelite.api.ParamID;
 import net.runelite.api.Player;
 import net.runelite.api.ScriptID;
+import net.runelite.api.Skill;
 import net.runelite.api.events.ActorDeath;
 import net.runelite.api.events.GameStateChanged;
 import net.runelite.api.events.GameTick;
 import net.runelite.api.events.ItemContainerChanged;
+import net.runelite.api.events.StatChanged;
 import net.runelite.api.events.VarbitChanged;
 import net.runelite.api.events.WidgetClosed;
 import net.runelite.api.events.WidgetLoaded;
+import net.runelite.api.gameval.DBTableID;
 import net.runelite.api.gameval.InterfaceID;
 import net.runelite.api.gameval.InventoryID;
 import net.runelite.api.gameval.ItemID;
@@ -216,6 +221,36 @@ public class CodexQuartermasterPlugin extends Plugin
 	/** What was carried when the bank opened, to tell a packing visit from one that only deposits; null when not seen. */
 	private Map<Integer, Long> openedWith;
 	private boolean dirty;
+	/** The boat the Boats page plans, picked by hand; null follows the boats the player owns. */
+	private Shipyard.Boat boatPick;
+	/** Where each boat is moored, read from the boat variables when they change. Client thread. */
+	private Moorings moorings = Moorings.NONE;
+	private boolean rereadBoats = true;
+	/** Each boat slot's owned flag, type, port and three name parts, first slot to fifth. */
+	private static final int[][] BOAT_VARS = {
+		{VarbitID.SAILING_BOAT_1_OWNED, VarbitID.SAILING_BOAT_1_TYPE, VarbitID.SAILING_BOAT_1_PORT,
+			VarbitID.SAILING_BOAT_1_NAME_1, VarbitID.SAILING_BOAT_1_NAME_2, VarbitID.SAILING_BOAT_1_NAME_3},
+		{VarbitID.SAILING_BOAT_2_OWNED, VarbitID.SAILING_BOAT_2_TYPE, VarbitID.SAILING_BOAT_2_PORT,
+			VarbitID.SAILING_BOAT_2_NAME_1, VarbitID.SAILING_BOAT_2_NAME_2, VarbitID.SAILING_BOAT_2_NAME_3},
+		{VarbitID.SAILING_BOAT_3_OWNED, VarbitID.SAILING_BOAT_3_TYPE, VarbitID.SAILING_BOAT_3_PORT,
+			VarbitID.SAILING_BOAT_3_NAME_1, VarbitID.SAILING_BOAT_3_NAME_2, VarbitID.SAILING_BOAT_3_NAME_3},
+		{VarbitID.SAILING_BOAT_4_OWNED, VarbitID.SAILING_BOAT_4_TYPE, VarbitID.SAILING_BOAT_4_PORT,
+			VarbitID.SAILING_BOAT_4_NAME_1, VarbitID.SAILING_BOAT_4_NAME_2, VarbitID.SAILING_BOAT_4_NAME_3},
+		{VarbitID.SAILING_BOAT_5_OWNED, VarbitID.SAILING_BOAT_5_TYPE, VarbitID.SAILING_BOAT_5_PORT,
+			VarbitID.SAILING_BOAT_5_NAME_1, VarbitID.SAILING_BOAT_5_NAME_2, VarbitID.SAILING_BOAT_5_NAME_3},
+	};
+	private static final Set<Integer> BOAT_VARBITS = new HashSet<>();
+
+	static
+	{
+		for (int[] slot : BOAT_VARS)
+		{
+			for (int v : slot)
+			{
+				BOAT_VARBITS.add(v);
+			}
+		}
+	}
 	private boolean unsaved;
 	private int ticks;
 
@@ -326,6 +361,10 @@ public class CodexQuartermasterPlugin extends Plugin
 		{
 			bankOpen = false;
 			storageGrace = 0;
+			// The next account's boats are its own.
+			moorings = Moorings.NONE;
+			rereadBoats = true;
+			boatPick = null;
 			readStorage = false;
 			openedWith = null;
 			if (quarters != null)
@@ -422,6 +461,101 @@ public class CodexQuartermasterPlugin extends Plugin
 		{
 			recarry |= event.getVarbitId() == POUCH_AMOUNTS[i] || event.getVarbitId() == POUCH_RUNES[i];
 		}
+		if (BOAT_VARBITS.contains(event.getVarbitId()))
+		{
+			rereadBoats = true;
+			dirty = true;
+		}
+	}
+
+	@Subscribe
+	public void onStatChanged(StatChanged event)
+	{
+		if (event.getSkill() == Skill.SAILING || event.getSkill() == Skill.CONSTRUCTION)
+		{
+			dirty = true;
+		}
+	}
+
+	/** Reads where each boat is moored, naming ports and boats from the game's own tables. Client thread. */
+	private Moorings readMoorings()
+	{
+		List<Moorings.Raw> slots = new ArrayList<>();
+		for (int[] v : BOAT_VARS)
+		{
+			slots.add(new Moorings.Raw(client.getVarbitValue(v[0]), client.getVarbitValue(v[1]), client.getVarbitValue(v[2]),
+				client.getVarbitValue(v[3]), client.getVarbitValue(v[4]), client.getVarbitValue(v[5])));
+		}
+		return Moorings.of(slots, new Moorings.Tables()
+		{
+			@Override
+			public String dock(int portId)
+			{
+				return lookup(DBTableID.SailingDock.ID, DBTableID.SailingDock.COL_DOCK_ID, portId, DBTableID.SailingDock.COL_NICE_NAME);
+			}
+
+			@Override
+			public String boat(int typeId)
+			{
+				return lookup(DBTableID.SailingBoat.ID, DBTableID.SailingBoat.COL_TYPE_ID, typeId, DBTableID.SailingBoat.COL_NAME);
+			}
+
+			@Override
+			public String namePart(int part, int index)
+			{
+				int row = part == 0 ? DBTableID.SailingBoatNameOptions.Row.SAILING_BOAT_NAME_PREFIX_OPTIONS
+					: part == 1 ? DBTableID.SailingBoatNameOptions.Row.SAILING_BOAT_NAME_DESCRIPTOR_OPTIONS
+					: DBTableID.SailingBoatNameOptions.Row.SAILING_BOAT_NAME_NOUN_OPTIONS;
+				try
+				{
+					Object[] options = client.getDBTableField(row, DBTableID.SailingBoatNameOptions.COL_OPTION, 0);
+					return options != null && index < options.length && options[index] instanceof String ? (String) options[index] : null;
+				}
+				catch (RuntimeException e)
+				{
+					return null;
+				}
+			}
+		});
+	}
+
+	/** A string column of the row whose id column holds the value, or null. Client thread. */
+	private String lookup(int table, int idColumn, int value, int column)
+	{
+		try
+		{
+			List<Integer> rows = client.getDBRowsByValue(table, idColumn, 0, value);
+			if (rows == null || rows.isEmpty())
+			{
+				return null;
+			}
+			Object[] field = client.getDBTableField(rows.get(0), column, 0);
+			return field != null && field.length > 0 && field[0] instanceof String ? (String) field[0] : null;
+		}
+		catch (RuntimeException e)
+		{
+			// A table the cache does not have, after a game update: the name is left unknown.
+			return null;
+		}
+	}
+
+	/** The boat to plan: the one picked, else the biggest boat owned, else the best the Sailing level allows. */
+	private Shipyard.Boat boatToPlan(int sailing)
+	{
+		if (boatPick != null)
+		{
+			return boatPick;
+		}
+		Shipyard.Boat best = null;
+		for (Moorings.Berth b : moorings.getBerths())
+		{
+			Shipyard.Boat boat = Shipyard.Boat.named(b.getType());
+			if (boat != null && (best == null || boat.compareTo(best) > 0))
+			{
+				best = boat;
+			}
+		}
+		return best != null ? best : Shipyard.bestFor(sailing);
 	}
 
 	@Subscribe
@@ -1007,6 +1141,31 @@ public class CodexQuartermasterPlugin extends Plugin
 				}
 			}
 		}
+		Shipyard.Roadmap roadmap = null;
+		Map<Integer, Long> held = Collections.emptyMap();
+		if (loggedIn)
+		{
+			if (rereadBoats)
+			{
+				rereadBoats = false;
+				moorings = readMoorings();
+			}
+			int sailing = client.getRealSkillLevel(Skill.SAILING);
+			int construction = client.getRealSkillLevel(Skill.CONSTRUCTION);
+			held = quarters.held(carried);
+			Map<Integer, Long> have = held;
+			roadmap = Shipyard.roadmap(boatToPlan(sailing), sailing, construction, id -> have.getOrDefault(id, 0L));
+			for (Shipyard.Step step : roadmap.getSteps())
+			{
+				for (Shipyard.Check c : new Shipyard.Check[]{step.getBest(), step.getNext()})
+				{
+					if (c != null)
+					{
+						c.getDesign().getMaterials().forEach(m -> name(m.getItemId()));
+					}
+				}
+			}
+		}
 		Player player = client.getLocalPlayer();
 		View.State state = !quarters.hasBank() ? View.State.WAITING_FOR_BANK : View.State.READY;
 		View view = new View(state, loggedIn && player != null ? player.getName() : null, chosen, plans, trips,
@@ -1020,7 +1179,8 @@ public class CodexQuartermasterPlugin extends Plugin
 			.ironman(ironman())
 			.fromTarget(build, fromRoadmap)
 			.packing(packAtBank ? packing : null, usage == null ? 0 : usage.typicalDuration())
-			.putBack(packAtBank ? putBack : null);
+			.putBack(packAtBank ? putBack : null)
+			.boats(roadmap, boatPick != null, moorings, held);
 
 		CodexQuartermasterConfig.PlaqueMode mode = config.plaque();
 		boolean showPlaque = loggedIn && quarters.hasBank() && chosen != null
@@ -1359,6 +1519,16 @@ public class CodexQuartermasterPlugin extends Plugin
 					save();
 					publish();
 				}
+			});
+		}
+
+		@Override
+		public void planBoat(Shipyard.Boat boat)
+		{
+			clientThread.invokeLater(() ->
+			{
+				boatPick = boat;
+				publish();
 			});
 		}
 

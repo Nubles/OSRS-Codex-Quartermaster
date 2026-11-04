@@ -47,7 +47,7 @@ import net.runelite.client.ui.PluginPanel;
 public class QuartermasterPanel extends PluginPanel
 {
 	static final int WIDTH = 200;
-	private static final String[] TABS = {"supplies", "restock", "kits"};
+	private static final String[] TABS = {"supplies", "restock", "kits", "boats"};
 	private static final int[] TARGETS = {5, 10, 25, 50, 100};
 	private static final int RECENT = 5;
 	/** The presets are unfolded on the Kits page. */
@@ -72,7 +72,7 @@ public class QuartermasterPanel extends PluginPanel
 	private final ItemIcons icons;
 	private final Actions actions;
 	private final Crest crest = new Crest();
-	private final Segmented tabs = new Segmented(true, "Supplies", "Restock", "Kits");
+	private final Segmented tabs = new Segmented(true, "Supplies", "Restock", "Kits", "Boats");
 	private final Segmented target = new Segmented(false, "5", "10", "25", "50", "100");
 	/** Restock the chosen kit, or every saved kit at once. */
 	private final Segmented scope = new Segmented(false, "This kit", "All kits");
@@ -81,10 +81,13 @@ public class QuartermasterPanel extends PluginPanel
 	private final JScrollPane supplies = scroller();
 	private final JScrollPane restock = scroller();
 	private final JScrollPane kits = scroller();
+	private final JScrollPane boats = scroller();
+	/** Which boat the Boats page plans. */
+	private final Segmented boatPicker = new Segmented(false, "Raft", "Skiff", "Sloop");
 
 	private View view = View.loggedOut();
 	/** Which pages still show an older view; a page is only rebuilt when it is looked at. */
-	private final boolean[] stale = {true, true, true};
+	private final boolean[] stale = {true, true, true, true};
 
 	public QuartermasterPanel(ItemIcons icons, Actions actions)
 	{
@@ -108,9 +111,17 @@ public class QuartermasterPanel extends PluginPanel
 		content.add(supplies, TABS[0]);
 		content.add(restock, TABS[1]);
 		content.add(kits, TABS[2]);
+		content.add(boats, TABS[3]);
 		add(content, BorderLayout.CENTER);
 
 		tabs.onChange(this::showTab);
+		boatPicker.onChange(i ->
+		{
+			if (actions != null)
+			{
+				actions.planBoat(com.codex.quartermaster.core.Shipyard.Boat.values()[i]);
+			}
+		});
 		target.setSelected(1, false);
 		target.onChange(i -> actions.target(TARGETS[i]));
 		scope.onChange(i ->
@@ -190,9 +201,13 @@ public class QuartermasterPanel extends PluginPanel
 		{
 			rebuildRestock();
 		}
-		else
+		else if (page == 2)
 		{
 			rebuildKits();
+		}
+		else
+		{
+			replace(boats, BoatsPage.build(view, icons, boatPicker));
 		}
 	}
 

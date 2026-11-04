@@ -2,9 +2,11 @@ package com.codex.quartermaster.ui;
 
 import com.codex.quartermaster.core.FromTarget;
 import com.codex.quartermaster.core.InventoryCheck;
+import com.codex.quartermaster.core.Moorings;
 import com.codex.quartermaster.core.Packing;
 import com.codex.quartermaster.core.Plan;
 import com.codex.quartermaster.core.Returns;
+import com.codex.quartermaster.core.Shipyard;
 import com.codex.quartermaster.core.Supply;
 import com.codex.quartermaster.core.Trip;
 import com.codex.quartermaster.core.Tuning;
@@ -60,6 +62,14 @@ public final class View
 	FromTarget.Build build;
 	/** The build's target is the one Codex Gear Roadmap is set to. */
 	boolean buildFromRoadmap;
+	/** The boat roadmap for the boat being planned, or null while no account is open. */
+	Shipyard.Roadmap boats;
+	/** The boat was picked by hand rather than from the boats the player owns. */
+	boolean boatPicked;
+	/** Where each of the player's boats is moored; never null. */
+	Moorings moorings = Moorings.NONE;
+	/** How many of an item the bank and inventory hold together, by item id. */
+	Map<Integer, Long> held = Collections.emptyMap();
 
 	/**
 	 * @param active the chosen kit's plan, or null when no account is open
@@ -137,6 +147,33 @@ public final class View
 		this.build = build;
 		buildFromRoadmap = fromRoadmap;
 		return this;
+	}
+
+	/**
+	 * @param roadmap the boat roadmap, or null
+	 * @param picked the boat was picked by hand
+	 * @param moorings where each boat is moored, or null
+	 * @param held what the bank and inventory hold together, by item id
+	 */
+	public View boats(Shipyard.Roadmap roadmap, boolean picked, Moorings moorings, Map<Integer, Long> held)
+	{
+		boats = roadmap;
+		boatPicked = picked;
+		this.moorings = moorings == null ? Moorings.NONE : moorings;
+		this.held = held == null ? Collections.emptyMap() : held;
+		return this;
+	}
+
+	/** The bank has been seen, so materials can be counted. */
+	boolean bankKnown()
+	{
+		return bankSeen > 0;
+	}
+
+	long held(int itemId)
+	{
+		Long n = held.get(itemId);
+		return n == null ? 0 : n;
 	}
 
 	public View nameOnCard(boolean value)
