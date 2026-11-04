@@ -1,6 +1,7 @@
 package com.codex.quartermaster.ui;
 
 import com.codex.quartermaster.core.FromTarget;
+import com.codex.quartermaster.core.InventoryCheck;
 import com.codex.quartermaster.core.Packing;
 import com.codex.quartermaster.core.Plan;
 import com.codex.quartermaster.core.Returns;
@@ -39,6 +40,8 @@ public final class View
 	Packing packing;
 	/** How long a trip with the chosen kit usually takes, or 0 until measured. */
 	long tripMs;
+	/** What in the inventory the kit does not take, or takes less of, while packing; never null. */
+	InventoryCheck putBack = InventoryCheck.NONE;
 	/** The Codex plugin whose saved bank is shown, or null when the Quartermaster saw it itself. */
 	String bankFrom;
 	/** One plan restocking every saved kit together, or null with fewer than two. */
@@ -156,6 +159,13 @@ public final class View
 	{
 		this.packing = packing;
 		this.tripMs = tripMs;
+		return this;
+	}
+
+	/** @param check the inventory against the kit being packed, or null */
+	public View putBack(InventoryCheck check)
+	{
+		putBack = check == null ? InventoryCheck.NONE : check;
 		return this;
 	}
 

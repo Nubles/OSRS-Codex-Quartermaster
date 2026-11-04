@@ -254,9 +254,17 @@ public class Quarters
 			{
 				continue;
 			}
+			int full = Variants.fullOf(id);
+			if (full >= 0 && carried.getOrDefault(full, 0L) > 0)
+			{
+				// A sipped potion beside full ones of its kind: counted with them, by its doses.
+				continue;
+			}
 			String key = Supplies.keyFor(id);
 			boolean tool = !Supplies.pooled(id) && q == 1 && !stackable.test(id);
-			counts.merge(key, tool ? 0 : q * Supplies.get(key).getUnits().get(id), Long::sum);
+			Supply s = Supplies.get(key);
+			long units = s.getPartial().isEmpty() ? q * s.getUnits().get(id) : s.count(carried);
+			counts.merge(key, tool ? 0 : units, Long::sum);
 		}
 		if (counts.isEmpty())
 		{

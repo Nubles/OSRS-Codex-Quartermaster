@@ -23,6 +23,13 @@ Part of the **Codex** suite of RuneLite plugins. They share one look: warm ink, 
   <img src="docs/screenshots/bank-highlight.png" width="400" alt="What to withdraw, outlined in the bank">
 </p>
 
+**Put back.** The inventory beside the bank is marked against the kit too. Loot and anything else the kit does not take is rimmed in red and tabbed *out*. Packing past the kit's amount, such as an eleventh shark for 200 hp, marks the last ones taken in ember, and only as many as can go without leaving the kit short. A stack still short, such as 40 bolts of 200, says *+160*. The panel lists what to put back and how many slots it frees. Gear, coins and untradeable things such as a looting bag are never marked.
+
+<p align="center">
+  <img src="docs/screenshots/packing-put-back.png" width="225" alt="The packing check with what to put back">
+  <img src="docs/screenshots/inventory-marks.png" width="190" alt="The inventory marked: loot out, one shark and one potion too many, bolts short">
+</p>
+
 **Restock.** Pick a target of 5, 10, 25, 50 or 100 trips and get a shopping list at Grand Exchange prices. Each supply is bought as the item you already use most of, so anglerfish if you eat anglerfish, never cake slices. **Copy shopping list** puts it on the clipboard. When an order is more than the exchange sells in four hours (11,000 enchanted ruby bolts, 2,000 prayer potions), a **Buy limits** card says how many rounds it takes. With two or more kits, **All kits** stocks them all from the one bank they share. Iron accounts get a list of what to make or gather instead of a bill.
 
 <p align="center">
@@ -59,7 +66,7 @@ Part of the **Codex** suite of RuneLite plugins. They share one look: warm ink, 
 - **Plan from your trips** (on): once a kit has two measured trips, plan from what you really used.
 - **Recognise packed kits** (on): switch to one of your saved kits when you leave the bank carrying it.
 - **Warn at trips left** (3): the chat warning when supplies run low.
-- **Packing check** and **Mark what to withdraw** (both on): the help at the bank.
+- **Packing check**, **Mark what to withdraw** and **Mark what to put back** (all on): the help at the bank.
 - **Supply plaque** (at the bank): when the plaque shows, or never.
 - **Name on cards** (on): turn off to share the kit card without your character's name.
 
@@ -71,7 +78,7 @@ The Quartermaster saves your kits in a stable shape for others to read. Codex Ba
 
 ## How it counts
 
-Supplies that stand in for one another are pooled. Food counts in hitpoints healed, so a shark is 20 and a manta ray 22. Prayer potions, super restores and sanfew serums count as prayer doses, and ranging, divine ranging and bastion potions as ranging doses. Magic, super combat, antifire, anti-venom, stamina and Saradomin brews work the same way. Enchanted ruby and diamond dragon bolts count together. Anything else a saved kit carries counts as its own item, including the runes in a rune pouch.
+Supplies that stand in for one another are pooled. Food counts in hitpoints healed, so a shark is 20 and a manta ray 22. Prayer potions, super restores and sanfew serums count as prayer doses, and ranging, divine ranging and bastion potions as ranging doses. Magic, super combat, antifire, anti-venom, stamina and Saradomin brews work the same way. Enchanted ruby and diamond dragon bolts count together. Anything else a saved kit carries counts as its own item, including the runes in a rune pouch. A potion of its own, such as super strength, also counts its sipped forms by their doses: two super strength(2) are one super strength(4), so a kit is still packed with yesterday's leftovers in it, and a trip that drinks half of two potions is measured as one potion used. Which forms belong together comes from RuneLite's item variation table, checked by name; gear is left out, since its numbers are charges.
 
 Your bank is read whenever it is open and remembered as last seen, so the panel works anywhere. Potion storage counts too. What you carry is added: inventory, worn gear, rune pouch and the ammo in Dizana's quiver. Prices are RuneLite's Grand Exchange prices. Everything is saved per account in your RuneLite profile. A save damaged on disk keeps all it can: one unreadable kit or setting is lost alone. Before a damaged save, or one a newer version wrote, is first saved over, a copy of it as found is kept aside in your profile.
 

@@ -1,6 +1,7 @@
 package com.codex.quartermaster.ui;
 
 import com.codex.quartermaster.core.BuyLimits;
+import com.codex.quartermaster.core.InventoryCheck;
 import com.codex.quartermaster.core.Loadout;
 import com.codex.quartermaster.core.Packing;
 import com.codex.quartermaster.core.Need;
@@ -489,6 +490,7 @@ public class QuartermasterPanel extends PluginPanel
 			done.add(Ui.wrapped("Everything one trip takes is in your inventory.", Theme.small(), Theme.TEXT_MUTED, WIDTH - 12),
 				BorderLayout.CENTER);
 			stack.add(done);
+			addPutBack(stack, view.putBack);
 			return;
 		}
 		Card card = new Card(new BorderLayout());
@@ -514,6 +516,30 @@ public class QuartermasterPanel extends PluginPanel
 			south.add(show);
 			card.add(south, BorderLayout.SOUTH);
 		}
+		stack.add(card);
+		addPutBack(stack, view.putBack);
+	}
+
+	/**
+	 * What in the inventory the kit does not take, or takes less of: loot to bank, an extra shark.
+	 * The inventory beside the bank is marked the same way.
+	 */
+	private void addPutBack(StackPanel stack, InventoryCheck check)
+	{
+		Map<Integer, Long> stray = check.toDeposit(InventoryCheck.Kind.STRAY);
+		Map<Integer, Long> surplus = check.toDeposit(InventoryCheck.Kind.SURPLUS);
+		if (stray.isEmpty() && surplus.isEmpty())
+		{
+			return;
+		}
+		int freed = check.slotsFreed();
+		stack.add(new SectionHeader("Put back", freed == 0 ? "" : freed + (freed == 1 ? " slot" : " slots") + " to free"));
+		Card card = new Card(new BorderLayout());
+		card.accent(stray.isEmpty() ? Theme.EMBER : Theme.BLOOD);
+		StackPanel rows = new StackPanel(2, 0);
+		stray.forEach((id, n) -> rows.add(new BuyRow(id, view.name(id), "not in the kit", "x" + Format.amount(n), Theme.BLOOD, icons)));
+		surplus.forEach((id, n) -> rows.add(new BuyRow(id, view.name(id), "past the kit's amount", "x" + Format.amount(n), Theme.EMBER, icons)));
+		card.add(rows, BorderLayout.CENTER);
 		stack.add(card);
 	}
 
