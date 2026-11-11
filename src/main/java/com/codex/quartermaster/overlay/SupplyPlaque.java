@@ -108,6 +108,20 @@ public class SupplyPlaque extends Overlay
 		{
 			return null;
 		}
+		// Drawn on a copy, so the hints, font, paint and clip RuneLite hands over come back untouched.
+		Graphics2D copy = (Graphics2D) g.create();
+		try
+		{
+			return draw(copy, s);
+		}
+		finally
+		{
+			copy.dispose();
+		}
+	}
+
+	private Dimension draw(Graphics2D g, Shown s)
+	{
 		Theme.smooth(g);
 		g.setFont(Theme.title());
 		FontMetrics bold = g.getFontMetrics();
