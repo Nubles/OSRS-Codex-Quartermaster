@@ -12,6 +12,7 @@ import java.awt.FontMetrics;
 import java.awt.GradientPaint;
 import java.awt.Graphics;
 import java.awt.Graphics2D;
+import java.awt.Shape;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.awt.geom.Path2D;
@@ -223,10 +224,12 @@ class TargetCard extends JComponent
 		g.fill(shape);
 		g.setColor(Theme.alpha(Theme.GOLD, 70));
 		g.draw(shape);
-		g.setClip(shape);
+		// Clipped to the card's corners, then the clip it came with is put back, never cleared.
+		Shape old = g.getClip();
+		g.clip(shape);
 		g.setPaint(new GradientPaint(0, 0, Theme.TEAL, 0, height, Theme.alpha(Theme.GOLD_DIM, 60)));
 		g.fillRect(0, 0, 3, height);
-		g.setClip(null);
+		g.setClip(old);
 
 		g.setFont(Theme.body());
 		FontMetrics body = g.getFontMetrics();

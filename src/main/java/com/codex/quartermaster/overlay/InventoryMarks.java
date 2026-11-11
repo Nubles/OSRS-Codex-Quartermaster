@@ -81,7 +81,21 @@ public class InventoryMarks extends WidgetItemOverlay
 	}
 
 	@Override
-	public void renderItemOverlay(Graphics2D g, int itemId, WidgetItem widgetItem)
+	public void renderItemOverlay(Graphics2D graphics, int itemId, WidgetItem widgetItem)
+	{
+		// Drawn on a copy, so the font and colour RuneLite hands over come back untouched.
+		Graphics2D g = (Graphics2D) graphics.create();
+		try
+		{
+			mark(g, itemId, widgetItem);
+		}
+		finally
+		{
+			g.dispose();
+		}
+	}
+
+	private void mark(Graphics2D g, int itemId, WidgetItem widgetItem)
 	{
 		Widget w = widgetItem.getWidget();
 		InventoryCheck.Mark mark = w == null ? null : check.at(w.getIndex());
